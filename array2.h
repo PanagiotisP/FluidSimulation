@@ -246,7 +246,7 @@ typedef Array2<unsigned char, WrapArray1<unsigned char> >           WrapArray2uc
 
 template<class T, class ArrayT = std::vector<T> >
 std::ostream& operator<<(std::ostream& out, const Array2<T, ArrayT>& x) {
-  for (unsigned int j = 0; j<x.nj; ++j) {
+  for (int j = x.nj-1; j>=0; --j) {
     out<<std::endl;
     for (unsigned int i = 0; i<x.ni; ++i) {
       out<<x.a[i+x.ni*j]<<' ';
