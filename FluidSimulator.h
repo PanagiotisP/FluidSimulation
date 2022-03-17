@@ -1,78 +1,77 @@
 #pragma once
+#define ZERO_CELCIUS 273
 #include "array2.h"
 #include "pcgsolver/pcg_solver.h"
 #include "pcgsolver/sparse_matrix.h"
 #include "vec.h"
-class FluidSimulator
-{
+#include "MacGrid.h"
+#include "LevelSet.h"
+
+struct ScalarSource {
+    float x, y, value;
+};
+
+struct VectorSource {
+    float x, y;
+    float val_x, val_y;
+};
+
+class FluidSimulator {
 public:
-  void initialize(float width, float density, int nx, int ny);
-  //void set_boundary(float (*phi)(const Vec3f&));
-  //void set_liquid(float (*phi)(const Vec3f&));
-  //void add_particle(const Vec3f& pos);
-  
-  //Get velocity at point
-  //Coordinates given on original grid
-  Vec2f evaluate_velocity(const Vec2f& point);
-  
-  //Get scalar quantity at point
-  float evaluate_scalar(Vec2f& point, Array2f& grid);
+    //Get velocity at point
+    //Coordinates given on original grid
 
-  void set_boundary();
+    //Get scalar quantity at point
 
-  void advance(float t_frame);
+    void advance(MacGrid& grid, float t_frame);
+    void advance(MacGrid& grid, float t_frame, std::vector<ScalarSource>* temperatureSrcs, std::vector<ScalarSource>* concentrationSrcs, std::vector<VectorSource>* velocitySrcs, 
+        bool isTemperatureSrcActive = false, bool isConcentrationSrcActive = false, bool isVelocitySrcActive = false);
 
-  //Grid dimensions
-  int nx, ny;
-
-  float dx;
-
-  const float grav = 9.81f;
-  float density;
-
-  //Boundaries
-  Array2f solid_phi;
-  Array2f liquid_phi;
-
-  //Velocity vector fields
-  Array2f u_grid, temp_u_grid;
-  Array2f v_grid, temp_v_grid;
-
-  //Scalar fields for other quantities
-  Array2f temperature, temp_temperature;
-  Array2f concentration, temp_concentration;
-
-  Array2f divirgence;
-
-  //Pressure solver
-  std::vector<double> rhs;
-  std::vector<double> pressure_grid;
-  SparseMatrixd alpha_matrix;
-  PCGSolver<double> solver;
-
-  FluidSimulator();
-  ~FluidSimulator();
-
+    const float grav = 9.81f;
+    const float density = 1;
+    const float rate_t = 10;
+    const float rate_c = 10;
+    const float diffuse_cosnt_t = 1;
+    const float ambient_temp = ZERO_CELCIUS + 21;
+    const float diffuse_rate_temperature = 0.1;
+    const float diffuse_rate_concentration = 0;
+    FluidSimulator();
+    ~FluidSimulator();
+    void print_temperature_field(MacGrid& grid, const char* variable_name);
+    void print_concentration_field(MacGrid& grid, const char* variable_name);
+    void print_velocity_field(MacGrid& grid, const char* variable_name);
 private:
-  Vec2f trace_rk2(const Vec2f& point, float dt);
+    void get_advected_position(MacGrid& grid, float x_initial, float y_initial, float dt, float* x_result, float* y_result);
 
-  float compute_cfl();
+    float compute_cfl(MacGrid& grid);
 
-  //void advect_particles(float dt);
-  //Semi-Lagrangian advection
-  void advect(float dt);
+    //void advect_particles(float dt);
+    //Semi-Lagrangian advection
+    void advect(MacGrid& grid, float dt);
 
-  //Add external forces like gravity
-  void add_forces(float dt);
+    void advect_particles(MacGrid& grid, float dt);
+    //Add external forces like gravity
+    void add_forces(MacGrid& grid, float dt);
 
-  //Apply incrompressibility constraint
-  void project(float dt);
-  //void constrain_velocity();
+    //Apply incrompressibility constraint
+    void project(MacGrid& grid, float dt);
+    //void constrain_velocity();
+    void enforceDirichlet(MacGrid& mac_grid);
 
-  //helpers for pressure projection
-  //void compute_weights();
-  //void solve_pressure(float dt);
-  //void compute_phi
+    void classifyCells(MacGrid& grid, LevelSet& levelSet);
+    void add_temperature_source(MacGrid& grid, const ScalarSource& src, float dt);
+    void add_concentration_source(MacGrid& grid, const ScalarSource& src, float dt);
+    void add_velocity_source(MacGrid& grid, const VectorSource& src, float dt);
+    
+    void diffuse_scalar(MacGrid& grid, float dt, float diffuse_rate);
 
-  void calculate_divirgence();
+    // Implement with std::function
+    template <class T, class VectorT = std::vector<T>>
+    void apply_sources(MacGrid& grid, VectorT* sources, float dt, void (FluidSimulator::* function)(MacGrid&, const T&, float));
+
+    //void advectLevelSet(MacGrid& grid, LevelSet& levelSet, float dt);
+    //helpers for pressure projection
+    //void compute_weights();
+    //void solve_pressure(float dt);
+    //void compute_phi
 };

@@ -150,7 +150,11 @@
     <ClInclude Include="array2_utils.h" />
     <ClInclude Include="array3.h" />
     <ClInclude Include="array3_utils.h" />
+    <ClInclude Include="FluidDomain.h" />
     <ClInclude Include="FluidSimulator.h" />
+    <ClInclude Include="Grid.h" />
+    <ClInclude Include="LevelSet.h" />
+    <ClInclude Include="MacGrid.h" />
     <ClInclude Include="pcgsolver\blas_wrapper.h" />
     <ClInclude Include="pcgsolver\pcg_solver.h" />
     <ClInclude Include="pcgsolver\sparse_matrix.h" />
@@ -158,7 +162,11 @@
     <ClInclude Include="vec.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="FluidDomain.cpp" />
     <ClCompile Include="FluidSimulator.cpp" />
+    <ClCompile Include="Grid.cpp" />
+    <ClCompile Include="LevelSet.cpp" />
+    <ClCompile Include="MacGrid.cpp" />
     <ClCompile Include="main.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
