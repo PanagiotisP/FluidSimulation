@@ -1,0 +1,95 @@
+AccessModifierOffset: 0
+AlignAfterOpenBracket: "Align"
+AlignArrayOfStructures: "Right"
+AlignConsecutiveMacros: "AcrossEmptyLines"
+AlignTrailingComments: true
+IndentAccessModifiers: true
+AccessModifierOffset: -4
+AllowAllParametersOfDeclarationOnNextLine: false
+AllowShortBlocksOnASingleLine: "Empty"
+AllowShortCaseLabelsOnASingleLine: true
+AllowShortEnumsOnASingleLine: true
+AllowShortFunctionsOnASingleLine: true
+AllowShortIfStatementsOnASingleLine: true
+AllowShortLambdasOnASingleLine : true
+AllowShortLoopsOnASingleLine: true
+AlwaysBreakAfterReturnType: "None"
+AlwaysBreakTemplateDeclarations: "Yes"
+BinPackArguments: true
+BinPackParameters: true
+BreakBeforeBraces: "Custom"
+BraceWrapping: 
+  AfterCaseLabel: false
+  AfterClass: true
+  AfterControlStatement: "Never"
+  AfterEnum: false
+  AfterFunction: false
+  AfterNamespace: false
+  AfterObjCDeclaration: false
+  AfterStruct: false
+  AfterUnion: false 
+  AfterExternBlock: false 
+  BeforeCatch: false 
+  BeforeElse: false 
+  BeforeLambdaBody: false 
+  BeforeWhile: false 
+  IndentBraces: false
+  SplitEmptyFunction: false 
+  SplitEmptyRecord: false 
+  SplitEmptyNamespace: false 
+
+BreakBeforeBinaryOperators: "NonAssignment"
+BreakBeforeBraces: "Attach"
+BreakBeforeConceptDeclarations: true
+BreakBeforeTernaryOperators: true
+BreakConstructorInitializers: "AfterColon"
+BreakInheritanceList: "AfterColon"
+BreakStringLiterals: false
+ColumnLimit: 120
+CompactNamespaces: false
+ConstructorInitializerIndentWidth: 1
+Cpp11BracedListStyle: true
+EmptyLineAfterAccessModifier: "Leave"
+EmptyLineBeforeAccessModifier: "LogicalBlock"
+IncludeBlocks: "Regroup"
+IndentAccessModifiers: false
+IndentCaseBlocks: false
+IndentCaseLabels: true
+IndentPPDirectives: "BeforeHash"
+IndentWidth: 4
+Cpp11BracedListStyle: false
+IndentWrappedFunctionNames: true
+LambdaBodyIndentation: "Signature"
+Language: "Cpp"
+MaxEmptyLinesToKeep: 2
+NamespaceIndentation: "All"
+PointerAlignment: "Right"
+ReferenceAlignment: "Right"
+ReflowComments: true
+SortIncludes: "CaseSensitive"
+SpaceAfterLogicalNot: false
+SpaceAfterLogicalNot: false
+SpaceAroundPointerQualifiers: "Both"
+SpaceBeforeAssignmentOperators: true
+SpaceBeforeCaseColon: false
+SpaceBeforeCpp11BracedList: true
+SpaceBeforeCtorInitializerColon: false
+SpaceBeforeInheritanceColon: false
+SpaceBeforeParens: "ControlStatements"
+SpaceBeforeRangeBasedForLoopColon: true
+SpaceBeforeSquareBrackets: false
+SpaceInEmptyBlock: false
+SpaceInEmptyParentheses: false
+SpacesInAngles: "Leave"
+SpacesInCStyleCastParentheses: false
+SpacesInConditionalStatement: false
+SpacesInContainerLiterals: false
+SpacesInLineCommentPrefix: 
+  Minimum: "1"
+  Maximum: "-1"
+
+SpacesInParentheses: false
+SpacesInSquareBrackets: false
+Standard: "c++20"
+TabWidth: 4
+UseTab: "Never"
