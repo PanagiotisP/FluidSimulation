@@ -1,4 +1,5 @@
 #pragma once
+#include "LevelSet.h"
 #include "MacGrid.h"
 
 #include <memory>
@@ -35,6 +36,7 @@ public:
     }
 
 private:
+// Probably need to control the spawning time of the particle with a time_spawned variable
     float pos_x, pos_y;
     float vel_x, vel_y;
     float _temperature;
@@ -50,7 +52,7 @@ public:
     inline void pop_back() { particles.pop_back(); };
     void removeParticle(ParticleSet::iterator p);
     void advect(float dt);
-    void advectAndEnsureOutsideObstacles(MacGrid &mac_grid, float dt);
+    void advectAndEnsureOutsideObstacles(LevelSet& solid_level_set, MacGrid &mac_grid, float dt);
 
     inline ParticleSet::iterator begin() { return particles.begin(); };
     inline ParticleSet::iterator end() { return particles.end(); };

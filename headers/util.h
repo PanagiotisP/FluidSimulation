@@ -154,6 +154,13 @@ inline void update_minmax(T a1, T &amin, T &amax) {
 }
 
 template <class T>
+inline void sort(T &a, T &b) {
+    if (a > b) {
+        std::swap(a,b);
+    }
+}
+
+template <class T>
 inline void sort(T &a, T &b, T &c) {
     T temp;
     if (a < b) {
@@ -450,6 +457,23 @@ T calculate_quad_bspline(T x) {
         return 0.5f * sqr(1.5f - x);
     else
         return 0;
+}
+
+template <typename T>
+int sgn(T val) {
+    return (T(0) < val) - (val < T(0));
+}
+
+template <typename T>
+T fraction_inside(T phi_left, T phi_right) {
+   if(phi_left < 0 && phi_right < 0)
+      return 1;
+   if (phi_left < 0 && phi_right >= 0)
+      return phi_left / (phi_left - phi_right);
+   if(phi_left >= 0 && phi_right < 0)
+      return phi_right / (phi_right - phi_left);
+   else
+      return 0;
 }
 
 #endif

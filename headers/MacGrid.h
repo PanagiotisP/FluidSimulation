@@ -180,11 +180,11 @@ class MacGrid: public GridInterface {
     };
 
     inline void addToTemperatureInterpolated(float x, float y, float temperature) {
-        _temperature_back_buffer->addToValueInterpolated(x, y, temperature);
+        _temperature_back_buffer->addToValueInterpolated(x - 0.5 * _DELTA_X, y - 0.5 * _DELTA_Y, temperature);
     };
 
     inline void addToConcentrationInterpolated(float x, float y, float concentration) {
-        _concentration_back_buffer->addToValueInterpolated(x, y, concentration);
+        _concentration_back_buffer->addToValueInterpolated(x - 0.5 * _DELTA_X, y - 0.5 * _DELTA_Y, concentration);
     };
 
     inline void setVelXInterpolated(float x, float y, float vel_x) {
@@ -198,11 +198,11 @@ class MacGrid: public GridInterface {
     };
 
     inline void setTemperatureInterpolated(float x, float y, float temperature) {
-        _temperature_back_buffer->setValueInterpolated(x, y, temperature);
+        _temperature_back_buffer->setValueInterpolated(x - 0.5 * _DELTA_X, y - 0.5 * _DELTA_Y, temperature);
     };
 
     inline void setConcentrationInterpolated(float x, float y, float concentration) {
-        _concentration_back_buffer->setValueInterpolated(x, y, concentration);
+        _concentration_back_buffer->setValueInterpolated(x - 0.5 * _DELTA_X, y - 0.5 * _DELTA_Y, concentration);
     };
 
     void swapVelocityBuffers();

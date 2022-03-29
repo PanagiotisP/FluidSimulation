@@ -6,8 +6,12 @@
 #include "util.h"
 #include "vec.h"
 
+#include <Eigen/IterativeLinearSolvers>
+#include <Eigen/SparseCore>
+#include <random>
+
 // #define PRINT
-#define VERTICAL_PLANE false
+#define VERTICAL_PLANE true
 const float epsilon = 10e-37;
 
 float liquid_bound_x0, liquid_bound_x1;
@@ -48,18 +52,6 @@ FluidSimulator::FluidSimulator() {}
 
 FluidSimulator::~FluidSimulator() {}
 
-void FluidSimulator::classifyCells(MacGrid &grid, LevelSet &levelSet) {
-    //// First reset types (set all cells to AIR)
-    // grid.clearCellTypeBuffer();
-    // Fixed topology for now
-    grid.clearCellTypeBuffer();
-    // for (int j = 1; j < grid.sizeY() - 1; ++j) {
-    //     for (int i = 1; i < grid.sizeX() - 1; ++i) {
-    //         grid.setCellType(i, j, LIQUID);
-    //     }
-    // }
-}
-
 void FluidSimulator::print_temperature_field(MacGrid &grid, const char *variable_name) {
 #ifdef PRINT
     std::cout << variable_name;
@@ -95,10 +87,11 @@ void FluidSimulator::print_velocity_field(MacGrid &grid, const char *variable_na
 #endif // PRINT
 }
 
-void FluidSimulator::diffuse_scalar(MacGrid &grid, float dt, float diffuse_rate) {
+void FluidSimulator::diffuse_scalar(FluidDomain &domain, float dt, float diffuse_rate) {
+    auto &grid = domain.grid();
     for (int j = 0; j < grid.sizeY(); ++j) {
         for (int i = 0; i < grid.sizeX(); ++i) {
-            if (grid.cellType(i, j) == LIQUID) {
+            if (domain.fluidLevelSet()(i, j) < 0) {
                 int i_minus1 = clamp(i - 1, 0, grid.sizeX() - 1);
                 int j_minus1 = clamp(j - 1, 0, grid.sizeY() - 1);
 
@@ -133,8 +126,8 @@ void FluidSimulator::add_concentration_source(MacGrid &grid, const ScalarSource 
 }
 
 void FluidSimulator::add_velocity_source(MacGrid &grid, const VectorSource &src, float dt) {
-    grid.addToVelXInterpolated(src.x, src.y + 0.5 * grid.deltaY(), src.val_x);
-    grid.addToVelYInterpolated(src.x + 0.5 * grid.deltaX(), src.y, src.val_y);
+    grid.addToVelXInterpolated(src.x, src.y, src.val_x);
+    grid.addToVelYInterpolated(src.x, src.y, src.val_y);
 }
 
 template <class T, class VectorT>
@@ -142,7 +135,6 @@ void FluidSimulator::apply_sources(MacGrid &grid, VectorT *sources, float dt,
                                    void (FluidSimulator::*function)(MacGrid &, const T &, float)) {
     for (auto it = sources->begin(); it != sources->end(); ++it) { (this->*function)(grid, *it, dt); }
 }
-
 
 void FluidSimulator::transfer_from_particles_to_grid(FluidDomain &domain) {
     MacGrid &grid = domain.grid();
@@ -173,8 +165,8 @@ void FluidSimulator::transfer_from_particles_to_grid(FluidDomain &domain) {
     //  o -   o   - o - o
     for (auto it = domain.particleSet().begin(); it != domain.particleSet().end(); ++it) {
         auto &p = *it;
-        int i_start = clamp(static_cast<int>(floor(p->posX())) - 1, 0, grid.sizeX() - 1);
-        int j_start = clamp(static_cast<int>(floor(p->posY())) - 1, 0, grid.sizeY() - 1);
+        int i_start = clamp(static_cast<int>(floor(p->posX() / domain.grid().deltaX())) - 1, 0, grid.sizeX() - 1);
+        int j_start = clamp(static_cast<int>(floor(p->posY() / domain.grid().deltaY())) - 1, 0, grid.sizeY() - 1);
 
         int i_end = clamp(i_start + 4, 0, grid.sizeX() - 1);
         int j_end = clamp(j_start + 4, 0, grid.sizeY() - 1);
@@ -182,47 +174,42 @@ void FluidSimulator::transfer_from_particles_to_grid(FluidDomain &domain) {
 
         for (int j = j_start; j < j_end; ++j) {
             for (int i = i_start; i < i_end; ++i) {
-                if (grid.cellType(i, j) == LIQUID) {
-                    // velocity x-component
-                    k = calculate_kernel_function(grid, p->posX() - i * grid.deltaX(),
-                                                  p->posY() - (j + 0.5) * grid.deltaY());
-                    vel_x_weight(i, j) += k;
-                    grid.setVelXBackBufferHalfIndexed(i, j, grid.velXBackBufferHalfIndexed(i, j) + k * p->velX());
+                // velocity x-component
+                k = calculate_kernel_function(grid, p->posX() - i * grid.deltaX(),
+                                              p->posY() - (j + 0.5) * grid.deltaY());
+                vel_x_weight(i, j) += k;
+                grid.setVelXBackBufferHalfIndexed(i, j, grid.velXBackBufferHalfIndexed(i, j) + k * p->velX());
 
-                    // velocity y-component
-                    k = calculate_kernel_function(grid, p->posX() - (i + 0.5) * grid.deltaX(),
-                                                  p->posY() - j * grid.deltaY());
-                    vel_y_weight(i, j) += k;
-                    grid.setVelYBackBufferHalfIndexed(i, j, grid.velYBackBufferHalfIndexed(i, j) + (k * p->velY()));
+                // velocity y-component
+                k = calculate_kernel_function(grid, p->posX() - (i + 0.5) * grid.deltaX(),
+                                              p->posY() - j * grid.deltaY());
+                vel_y_weight(i, j) += k;
+                grid.setVelYBackBufferHalfIndexed(i, j, grid.velYBackBufferHalfIndexed(i, j) + (k * p->velY()));
 
 
-                    // quantities sampled at the center of the cell
-                    k = calculate_kernel_function(grid, p->posX() - (i + 0.5) * grid.deltaX(),
-                                                  p->posY() - (j + 0.5) * grid.deltaY());
-                    center_weight(i, j) += k;
-                    // temperature
-                    grid.setTemperatureBackBuffer(i, j, grid.temperatureBackBuffer(i, j) + (k * p->temperature()));
+                // quantities sampled at the center of the cell
+                k = calculate_kernel_function(grid, p->posX() - (i + 0.5) * grid.deltaX(),
+                                              p->posY() - (j + 0.5) * grid.deltaY());
+                center_weight(i, j) += k;
+                // temperature
+                grid.setTemperatureBackBuffer(i, j, grid.temperatureBackBuffer(i, j) + (k * p->temperature()));
 
-                    // concentration
-                    grid.setConcentrationBackBuffer(i, j,
-                                                    grid.concentrationBackBuffer(i, j) + (k * p->concentration()));
-                }
+                // concentration
+                grid.setConcentrationBackBuffer(i, j, grid.concentrationBackBuffer(i, j) + (k * p->concentration()));
             }
         }
     }
     for (int j = 0; j < grid.sizeY(); ++j) {
         for (int i = 0; i < grid.sizeX(); ++i) {
-            if (grid.cellType(i, j) == LIQUID) {
-                if (vel_x_weight(i, j) > 0) {
-                    grid.setVelXBackBufferHalfIndexed(i, j, grid.velXBackBufferHalfIndexed(i, j) / vel_x_weight(i, j));
-                }
-                if (vel_y_weight(i, j) > 0) {
-                    grid.setVelYBackBufferHalfIndexed(i, j, grid.velYBackBufferHalfIndexed(i, j) / vel_y_weight(i, j));
-                }
-                if (center_weight(i, j) > 0) {
-                    grid.setTemperatureBackBuffer(i, j, grid.temperatureBackBuffer(i, j) / center_weight(i, j));
-                    grid.setConcentrationBackBuffer(i, j, grid.concentrationBackBuffer(i, j) / center_weight(i, j));
-                }
+            if (vel_x_weight(i, j) > 0) {
+                grid.setVelXBackBufferHalfIndexed(i, j, grid.velXBackBufferHalfIndexed(i, j) / vel_x_weight(i, j));
+            }
+            if (vel_y_weight(i, j) > 0) {
+                grid.setVelYBackBufferHalfIndexed(i, j, grid.velYBackBufferHalfIndexed(i, j) / vel_y_weight(i, j));
+            }
+            if (center_weight(i, j) > 0) {
+                grid.setTemperatureBackBuffer(i, j, grid.temperatureBackBuffer(i, j) / center_weight(i, j));
+                grid.setConcentrationBackBuffer(i, j, grid.concentrationBackBuffer(i, j) / center_weight(i, j));
             }
         }
     }
@@ -246,22 +233,25 @@ void FluidSimulator::transfer_from_grid_to_particles(FluidDomain &domain, float 
         float flip_concentration = p->concentration() + grid.concentrationDiffInterpolated(p->posX(), p->posY());
 
 
-        p->setVelocity(pic_vel_x * flip_pic_ratio + flip_vel_x * (1 - flip_pic_ratio),
-                       pic_vel_y * flip_pic_ratio + flip_vel_y * (1 - flip_pic_ratio));
-        p->setTemperature(pic_temperature * flip_pic_ratio + flip_temperature * (1 - flip_pic_ratio));
-        p->setConcentration(pic_concentration * flip_pic_ratio + flip_concentration * (1 - flip_pic_ratio));
+        p->setVelocity(pic_vel_x * (1 - flip_pic_ratio) + flip_vel_x * flip_pic_ratio,
+                       pic_vel_y * (1 - flip_pic_ratio) + flip_vel_y * flip_pic_ratio);
+        p->setTemperature(pic_temperature * (1 - flip_pic_ratio) + flip_temperature * flip_pic_ratio);
+        p->setConcentration(pic_concentration * (1 - flip_pic_ratio) + flip_concentration * flip_pic_ratio);
     }
 }
 
 void FluidSimulator::reseeding(FluidDomain &domain) {
     MacGrid &grid(domain.grid());
     std::vector<ParticleSet::iterator> toBeErased;
+    std::random_device rd;  // Will be used to obtain a seed for the random number engine
+    std::mt19937 gen(rd()); // Standard mersenne_twister_engine seeded with rd()
+    std::normal_distribution<> dis(0, 1);
     auto compareParticles = [](const ParticleSet::iterator &p1, const ParticleSet::iterator &p2) {
         return (*p1)->concentration() < (*p2)->concentration();
     };
     for (int j = 0; j < grid.sizeY(); ++j) {
         for (int i = 0; i < grid.sizeX(); ++i) {
-            if (grid.cellType(i, j) == LIQUID) {
+            if (domain.fluidLevelSet()(i, j) < 0) {
                 int particle_counter = 0;
                 int k = 0;
                 toBeErased.clear();
@@ -273,26 +263,151 @@ void FluidSimulator::reseeding(FluidDomain &domain) {
                         toBeErased.push_back(it);
                     }
                 }
-                if (particle_counter > 12) {
+                if (particle_counter > 8) {
                     // Remove the particles based on concentration
                     std::sort(toBeErased.begin(), toBeErased.end(), compareParticles);
-                    toBeErased.resize(particle_counter - 12);
+                    toBeErased.resize(particle_counter - 4);
                     std::sort(toBeErased.begin(), toBeErased.end());
-                    while (toBeErased.size() != 0) {
+                    while (toBeErased.size() > 8) {
                         domain.particleSet().removeParticle(toBeErased.back());
                         toBeErased.pop_back();
                     }
-                } else if (particle_counter < 2) {
-                    float new_x = (i + std::rand() / static_cast<float>(RAND_MAX)) * grid.deltaX();
-                    float new_y = (j + std::rand() / static_cast<float>(RAND_MAX)) * grid.deltaY();
-                    auto p = std::make_unique<Particle>(
-                        new_x, new_y, grid.velXInterpolated(new_x, new_y), grid.velYInterpolated(new_x, new_y),
-                        grid.temperatureInterpolated(new_x, new_y), grid.concentrationInterpolated(new_x, new_y));
-                    domain.particleSet().addParticle(p);
+                } else if (particle_counter == 1) {
+                    float new_x = (i + dis(gen)) * grid.deltaX();
+                    float new_y = (j + dis(gen)) * grid.deltaY();
+
+                    int max_tries = 100;
+                    while (domain.fluidLevelSet().valueInterpolated(new_x - 0.5 * grid.deltaX(),
+                                                                    new_y - 0.5 * grid.deltaY())
+                               > 0
+                           && max_tries-- >= 0) {
+                        new_x = (i + dis(gen)) * grid.deltaX();
+                        new_y = (j + dis(gen)) * grid.deltaY();
+                    }
+                    // Limit exceeded
+                    if (max_tries >= 0) {
+                        auto p = std::make_unique<Particle>(
+                            new_x, new_y, grid.velXInterpolated(new_x, new_y), grid.velYInterpolated(new_x, new_y),
+                            grid.temperatureInterpolated(new_x, new_y), grid.concentrationInterpolated(new_x, new_y));
+                        domain.particleSet().addParticle(p);
+                    }
                 }
             }
         }
     }
+}
+
+void FluidSimulator::extrapolate_data(FluidDomain &domain, int iterations_n) {
+    auto &grid = domain.grid();
+    Grid<int> valid_mask_x_front_buffer(grid.sizeX(), grid.sizeY(), grid.deltaX(), grid.deltaY());
+    Grid<int> valid_mask_x_back_buffer(grid.sizeX(), grid.sizeY(), grid.deltaX(), grid.deltaY());
+    Grid<int> valid_mask_y_front_buffer(grid.sizeX(), grid.sizeY(), grid.deltaX(), grid.deltaY());
+    Grid<int> valid_mask_y_back_buffer(grid.sizeX(), grid.sizeY(), grid.deltaX(), grid.deltaY());
+
+    for (int j = 0; j < grid.sizeY(); ++j) {
+        for (int i = 0; i < grid.sizeX(); ++i) {
+            int i_minus_1 = clamp(i - 1, 0, grid.sizeX() - 1);
+            int j_minus_1 = clamp(j - 1, 0, grid.sizeY() - 1);
+            if (domain.fluidLevelSet()(i, j) < 0 || domain.fluidLevelSet()(i_minus_1, j) < 0) {
+                valid_mask_x_front_buffer(i, j) = 1;
+                valid_mask_x_back_buffer(i, j) = 1;
+                grid.setVelXBackBufferHalfIndexed(i, j, grid.velXHalfIndexed(i, j));
+            } else {
+                valid_mask_x_front_buffer(i, j) = 0;
+                valid_mask_x_back_buffer(i, j) = 0;
+                grid.setVelXBackBufferHalfIndexed(i, j, 0);
+                grid.setVelXHalfIndexed(i, j, 0);
+            }
+            if (domain.fluidLevelSet()(i, j) < 0 || domain.fluidLevelSet()(i, j_minus_1) < 0) {
+                valid_mask_y_front_buffer(i, j) = 1;
+                valid_mask_y_back_buffer(i, j) = 1;
+                grid.setVelYBackBufferHalfIndexed(i, j, grid.velYHalfIndexed(i, j));
+            } else {
+                valid_mask_y_front_buffer(i, j) = 0;
+                valid_mask_y_back_buffer(i, j) = 0;
+                grid.setVelYBackBufferHalfIndexed(i, j, 0);
+                grid.setVelYHalfIndexed(i, j, 0);
+            }
+        }
+    }
+
+    for (int iter = 0; iter < iterations_n; ++iter) {
+        for (int j = 0; j < grid.sizeY(); ++j) {
+            for (int i = 0; i < grid.sizeX(); ++i) {
+                int i_minus_1 = clamp(i - 1, 0, grid.sizeX() - 1);
+                int j_minus_1 = clamp(j - 1, 0, grid.sizeY() - 1);
+                int i_plus_1 = clamp(i + 1, 0, grid.sizeX() - 1);
+                int j_plus_1 = clamp(j + 1, 0, grid.sizeY() - 1);
+                // Check if this cell will be updated in the x dimension
+                if (valid_mask_x_front_buffer(i, j) == 0 && domain.solidLevelSet()(i, j) > 0
+                    && domain.solidLevelSet()(i_minus_1, j) > 0) {
+                    float new_vel_x = 0;
+                    int n_valid_neighbors_x = 0;
+
+                    // Get values of all valid neighbors
+                    if (valid_mask_x_front_buffer(i_minus_1, j) == 1) {
+                        new_vel_x += grid.velXBackBufferHalfIndexed(i_minus_1, j);
+                        n_valid_neighbors_x++;
+                    }
+                    if (valid_mask_x_front_buffer(i, j_minus_1) == 1) {
+                        new_vel_x += grid.velXBackBufferHalfIndexed(i, j_minus_1);
+                        n_valid_neighbors_x++;
+                    }
+                    if (valid_mask_x_front_buffer(i, j_plus_1) == 1) {
+                        new_vel_x += grid.velXBackBufferHalfIndexed(i, j_plus_1);
+                        n_valid_neighbors_x++;
+                    }
+                    if (valid_mask_x_front_buffer(i_plus_1, j) == 1) {
+                        new_vel_x += grid.velXBackBufferHalfIndexed(i_plus_1, j);
+                        n_valid_neighbors_x++;
+                    }
+
+                    // Average the value for the current cell
+                    if (n_valid_neighbors_x > 0) {
+                        new_vel_x /= n_valid_neighbors_x;
+                        grid.setVelXBackBufferHalfIndexed(i, j, new_vel_x);
+                        valid_mask_x_back_buffer(i, j) = 1;
+                    }
+                }
+
+                // Check if this cell will be updated in the y dimension
+                if (valid_mask_y_front_buffer(i, j) == 0 && domain.solidLevelSet()(i, j) > 0
+                    && domain.solidLevelSet()(i, j_minus_1) > 0) {
+                    float new_vel_y = 0;
+                    int n_valid_neighbors_y = 0;
+
+                    // Get values of all valid neighbors
+                    if (valid_mask_y_front_buffer(i_minus_1, j) == 1) {
+                        new_vel_y += grid.velYBackBufferHalfIndexed(i_minus_1, j);
+                        n_valid_neighbors_y++;
+                    }
+                    if (valid_mask_y_front_buffer(i, j_minus_1) == 1) {
+                        new_vel_y += grid.velYBackBufferHalfIndexed(i, j_minus_1);
+                        n_valid_neighbors_y++;
+                    }
+                    if (valid_mask_y_front_buffer(i, j_plus_1) == 1) {
+                        new_vel_y += grid.velYBackBufferHalfIndexed(i, j_plus_1);
+                        n_valid_neighbors_y++;
+                    }
+                    if (valid_mask_y_front_buffer(i_plus_1, j) == 1) {
+                        new_vel_y += grid.velYBackBufferHalfIndexed(i_plus_1, j);
+                        n_valid_neighbors_y++;
+                    }
+
+                    // Average the value for the current cell
+                    if (n_valid_neighbors_y > 0) {
+                        new_vel_y /= n_valid_neighbors_y;
+                        grid.setVelYBackBufferHalfIndexed(i, j, new_vel_y);
+                        valid_mask_y_back_buffer(i, j) = 1;
+                    }
+                }
+            }
+        }
+        // Swap valid mask
+        valid_mask_x_front_buffer = valid_mask_x_back_buffer;
+        valid_mask_y_front_buffer = valid_mask_y_back_buffer;
+    }
+    grid.swapVelocityBuffers();
 }
 
 void FluidSimulator::advance_flip_pic(FluidDomain &domain, float t_frame, float flip_pic_ratio = 0.98) {
@@ -301,29 +416,27 @@ void FluidSimulator::advance_flip_pic(FluidDomain &domain, float t_frame, float 
         float timestep = compute_cfl(domain.grid());
         if (timestep + t >= t_frame) { timestep = t_frame - t; }
         printf("Taking substep of size %f (to %0.3f%% of the frame)\n", timestep, 100 * (t + timestep) / t_frame);
+        domain.update(timestep);
+        domain.construct_level_set_from_marker_particles(domain.fluidLevelSet());
 
+        // reseeding(domain);
+
+        transfer_from_particles_to_grid(domain);
         domain.grid().updatePreviousVelocityBuffer();
 
-        domain.grid().clearCellTypeBuffer();
-        print_concentration_field(domain.grid(), "before transfer");
-
-        domain.update(timestep);
-        transfer_from_particles_to_grid(domain);
-        print_concentration_field(domain.grid(), "after transfer to grid");
-
         // Eulerian grid part START
-        add_forces(domain.grid(), timestep);
-        project(domain.grid(), timestep);
-        enforceDirichlet(domain.grid());
+        add_forces(domain, timestep);
+        enforceDirichlet(domain);
+        extrapolate_data(domain, 2);
+        project(domain, timestep);
+        enforceDirichlet(domain);
         // Eulerian grid part END
 
-        reseeding(domain);
         domain.grid().updateDiffBuffers();
 
-        transfer_from_grid_to_particles(domain);
+        transfer_from_grid_to_particles(domain, flip_pic_ratio);
         domain.advectParticles(timestep);
 
-        // print_concentration_field(domain.grid(), "after advection");
         t += timestep;
     }
 }
@@ -344,9 +457,8 @@ void FluidSimulator::advance_eulerian_grid(FluidDomain &domain, float t_frame,
         float timestep = compute_cfl(domain.grid());
         if (timestep + t >= t_frame) { timestep = t_frame - t; }
         printf("Taking substep of size %f (to %0.3f%% of the frame)\n", timestep, 100 * (t + timestep) / t_frame);
-        domain.classifyCells();
 
-        advect(domain.grid(), timestep);
+        advect(domain, timestep);
         print_velocity_field(domain.grid(), "");
 
         if (isTemperatureSrcActive) {
@@ -368,19 +480,19 @@ void FluidSimulator::advance_eulerian_grid(FluidDomain &domain, float t_frame,
         print_velocity_field(domain.grid(), "");
 
 
-        diffuse_scalar(domain.grid(), timestep, 0.01);
+        diffuse_scalar(domain, timestep, 0.01);
 
         // apply forces (e.g. gravity)
-        add_forces(domain.grid(), timestep);
+        add_forces(domain, timestep);
         // print_velocity_field(domain.grid(), "After forces");
         // print_temperature_field(domain.grid(), "After forces");
 
 
-        project(domain.grid(), timestep);
+        project(domain, timestep);
         print_velocity_field(domain.grid(), "");
         // print_velocity_field(domain.grid(), "After projection");
 
-        enforceDirichlet(domain.grid());
+        enforceDirichlet(domain);
 
         ////update temperature and concentration
         // float rate_t = 10;
@@ -445,7 +557,8 @@ float FluidSimulator::compute_cfl(MacGrid &grid) {
     return min(grid.deltaX(), grid.deltaY()) / (max_vel + epsilon);
 }
 
-void FluidSimulator::advect(MacGrid &grid, float dt) {
+void FluidSimulator::advect(FluidDomain &domain, float dt) {
+    auto &grid = domain.grid();
     for (int j = 0; j < grid.sizeY(); ++j) {
         for (int i = 0; i < grid.sizeX(); ++i) {
             grid.setVelXBackBufferHalfIndexed(i, j, grid.velXHalfIndexed(i, j));
@@ -458,7 +571,7 @@ void FluidSimulator::advect(MacGrid &grid, float dt) {
     // Hypothetical particle for x-component
     for (int j = 0; j < grid.sizeY(); ++j) {
         for (int i = 0; i < grid.sizeX(); ++i) {
-            if (grid.cellType(i, j) == LIQUID || grid.cellType(i - 1, j) == LIQUID) {
+            if (domain.fluidLevelSet()(i, j) < 0 || domain.fluidLevelSet()(i - 1, j) < 0) {
                 float x_current = i * grid.deltaX();
                 float y_current = (j + 0.5) * grid.deltaY();
                 float x_previous, y_previous;
@@ -474,7 +587,7 @@ void FluidSimulator::advect(MacGrid &grid, float dt) {
     // Hypothetical particle for y-component
     for (int j = 0; j < grid.sizeY(); ++j) {
         for (int i = 0; i < grid.sizeX(); ++i) {
-            if (grid.cellType(i, j) == LIQUID || grid.cellType(i - 1, j) == LIQUID) {
+            if (domain.fluidLevelSet()(i, j) < 0 || domain.fluidLevelSet()(i - 1, j) < 0) {
                 float x_current = (i + 0.5) * grid.deltaX();
                 float y_current = j * grid.deltaY();
                 float x_previous, y_previous;
@@ -490,7 +603,7 @@ void FluidSimulator::advect(MacGrid &grid, float dt) {
     // Advect other quantities like Temperature and Concentration
     for (int j = 0; j < grid.sizeY(); ++j) {
         for (int i = 0; i < grid.sizeX(); ++i) {
-            if (grid.cellType(i, j) == LIQUID || grid.cellType(i - 1, j) == LIQUID) {
+            if (domain.fluidLevelSet()(i, j) < 0 || domain.fluidLevelSet()(i - 1, j) < 0) {
                 float x_current = (i + 0.5) * grid.deltaX();
                 float y_current = (j + 0.5) * grid.deltaY();
                 float x_previous, y_previous;
@@ -518,139 +631,267 @@ void FluidSimulator::advect(MacGrid &grid, float dt) {
     }
 }
 
-void FluidSimulator::add_forces(MacGrid &grid, float dt) {
+void FluidSimulator::add_forces(FluidDomain &domain, float dt) {
     // gravity
+    auto &grid = domain.grid();
     for (int j = 0; j < grid.sizeY(); ++j) {
         for (int i = 0; i < grid.sizeX(); ++i) {
             // Only add force to the liquid cells
-            if (grid.cellType(i, j) == LIQUID) {
+            if (domain.fluidLevelSet()(i, j) < 0) {
                 if (VERTICAL_PLANE) { grid.setVelYHalfIndexed(i, j, grid.velYHalfIndexed(i, j) - grav * dt); }
             }
         }
     }
 }
 
-void FluidSimulator::project(MacGrid &grid, float dt) {
-    const int system_size = grid.sizeX() * grid.sizeY();
+void FluidSimulator::project(FluidDomain &domain, float dt) {
+    auto &grid = domain.grid();
+    int system_size = 0;
+
+    // Solver of linear system
+    Eigen::ConjugateGradient<Eigen::SparseMatrix<float, 1 > > solver;
+    // Laplacian matrix
+    Eigen::SparseMatrix<float, 1> alpha_matrix;
+
+    Grid<int> fluid_indices(grid.sizeX(), grid.sizeX(), grid.deltaX(), grid.deltaY());
+    // Index all cells with fluid
+    for (int j = 0; j < grid.sizeY(); ++j) {
+        for (int i = 0; i < grid.sizeX(); ++i) {
+            if (domain.fluidLevelSet()(i, j) < 0) {
+                fluid_indices(i, j) = system_size;
+                system_size++;
+            } else {
+                fluid_indices(i, j) = -1;
+            }
+        }
+    }
+    if (system_size == 0) { return; }
+    alpha_matrix.resize(system_size, system_size);
+    alpha_matrix.reserve(Eigen::VectorXi::Constant(system_size, 5));
+
+    Eigen::VectorXf rhs(system_size);
 
     // Pressure solver
-    std::vector<double> rhs(system_size);
-    std::vector<double> pressure_grid(system_size);
-    SparseMatrixd alpha_matrix(system_size);
-    PCGSolver<double> solver;
+    // std::vector<double> rhs(system_size);
+    // std::vector<double> pressure_grid(system_size);
+    // SparseMatrixd alpha_matrix(system_size);
+    // PCGSolver<double> solver;
 
-    alpha_matrix.zero();
-    rhs.assign(rhs.size(), 0);
-    pressure_grid.assign(pressure_grid.size(), 0);
+    // alpha_matrix.zero();
+    // rhs.assign(rhs.size(), 0);
+    // pressure_grid.assign(pressure_grid.size(), 0);
 
 
     float scale_x = dt / (FluidDomain::density * sqr(grid.deltaX()));
     float scale_y = dt / (FluidDomain::density * sqr(grid.deltaY()));
+
+    // solid velocity zero for now
+    float u_solid = 0;
+    float v_solid = 0;
+
+    // 2-d Array. Don't really need a grid for that
+    Array2f u_weights(grid.sizeX(), grid.sizeY());
+    Array2f v_weights(grid.sizeX(), grid.sizeY());
+
     for (int j = 0; j < grid.sizeY(); ++j) {
         for (int i = 0; i < grid.sizeX(); ++i) {
-            int idx = i + j * grid.sizeX();
+            float j_plus_1 = clamp(j + 1, 0, grid.sizeY() - 1);
 
-            rhs[idx] = 0;
-            pressure_grid[idx] = 0;
-            // solid velocity zero for now
-            if (grid.cellType(i, j) == LIQUID) {
-                // left neighbour
-                if (grid.cellType(i - 1, j) != SOLID) {
-                    if (grid.cellType(i - 1, j) == LIQUID) { alpha_matrix.add_to_element(idx, idx - 1, -scale_x); }
-                    alpha_matrix.add_to_element(idx, idx, scale_x);
-                } else {
-                    rhs[idx] -= grid.velXHalfIndexed(i, j) / grid.deltaX();
-                }
+            // TODO NEED TO REEVAULATE THE 0.5 (right now taking bottom left corners)
+            float phi_i_j =
+                domain.solidLevelSet().valueInterpolated((i - 0.5f) * grid.deltaX(), (j - 0.5f) * grid.deltaY());
+            float phi_i_j_plus_1 =
+                domain.solidLevelSet().valueInterpolated((i - 0.5f) * grid.deltaX(), (j_plus_1 - 0.5f) * grid.deltaY());
 
-                // right neighbour
-                if (grid.cellType(i + 1, j) != SOLID) {
-                    if (grid.cellType(i + 1, j) == LIQUID) { alpha_matrix.add_to_element(idx, idx + 1, -scale_x); }
-                    alpha_matrix.add_to_element(idx, idx, scale_x);
-                } else {
-                    rhs[idx] += grid.velXHalfIndexed(i + 1, j) / grid.deltaX();
-                }
-
-                // bottom neighbour
-                if (grid.cellType(i, j - 1) != SOLID) {
-                    if (grid.cellType(i, j - 1) == LIQUID) {
-                        alpha_matrix.add_to_element(idx, idx - grid.sizeX(), -scale_y);
-                    }
-                    alpha_matrix.add_to_element(idx, idx, scale_y);
-                } else {
-                    rhs[idx] -= grid.velYHalfIndexed(i, j) / grid.deltaY();
-                }
-
-                // top neighbour
-                if (grid.cellType(i, j + 1) != SOLID) {
-                    if (grid.cellType(i, j + 1) == LIQUID) {
-                        alpha_matrix.add_to_element(idx, idx + grid.sizeX(), -scale_y);
-                    }
-                    alpha_matrix.add_to_element(idx, idx, scale_y);
-                } else {
-                    rhs[idx] += grid.velYHalfIndexed(i, j + 1) / grid.deltaY();
-                }
-
-                // Set right hand side equal to negative divirgence
-                rhs[idx] -= (grid.divVelX(i, j) + grid.divVelY(i, j));
+            sort(phi_i_j, phi_i_j_plus_1);
+            if (phi_i_j == 0 && phi_i_j_plus_1 == 0) {
+                u_weights(i, j) = 0;
+            } else if (phi_i_j * phi_i_j_plus_1 <= 0) { // Solid - Fluid Boundary
+                u_weights(i, j) = -phi_i_j_plus_1 / (phi_i_j - phi_i_j_plus_1);
+            } else if (phi_i_j < 0) { // Completely in solid
+                u_weights(i, j) = 0;
+            } else { // Completely in fluid
+                u_weights(i, j) = 1;
             }
+            if (u_weights(i, j) < 0.1) u_weights(i, j) = 0;
         }
     }
-    // Solve the system using Robert Bridson's incomplete Cholesky PCG solver
+    for (int j = 0; j < grid.sizeY(); ++j) {
+        for (int i = 0; i < grid.sizeX(); ++i) {
+            float i_plus_1 = clamp(i + 1, 0, grid.sizeX() - 1);
 
-    double tolerance;
-    int iterations;
+            // TODO NEED TO REEVAULATE THE 0.5 (right now taking bottom left corners)
+            float phi_i_j =
+                domain.solidLevelSet().valueInterpolated((i - 0.5f) * grid.deltaX(), (j - 0.5f) * grid.deltaY());
+            float phi_i_plus_1_j =
+                domain.solidLevelSet().valueInterpolated((i_plus_1 - 0.5f) * grid.deltaX(), (j - 0.5f) * grid.deltaY());
 
+            sort(phi_i_j, phi_i_plus_1_j);
+            if (phi_i_j == 0 && phi_i_plus_1_j == 0) {
+                v_weights(i, j) = 0;
+            } else if (phi_i_j * phi_i_plus_1_j <= 0) { // Solid - Fluid Boundary
+                v_weights(i, j) = -phi_i_plus_1_j / (phi_i_j - phi_i_plus_1_j);
+            } else if (phi_i_j < 0) { // Completely in solid
+                v_weights(i, j) = 0;
+            } else { // Completely in fluid
+                v_weights(i, j) = 1;
+            }
+            if (v_weights(i, j) < 0.1) v_weights(i, j) = 0;
+        }
+    }
+    for (int j = 0; j < grid.sizeY(); ++j) {
+        for (int i = 0; i < grid.sizeX(); ++i) {
+            if (fluid_indices(i, j) != -1) {
+                int idx = fluid_indices(i, j); // i + j * grid.sizeX();
+                rhs[idx] = 0;
+                float diagonal = 0;
+                float theta = 0;
+
+                int i_minus_1 = clamp(i - 1, 0, grid.sizeX() - 1);
+                int j_minus_1 = clamp(j - 1, 0, grid.sizeY() - 1);
+
+                int i_plus_1 = clamp(i + 1, 0, grid.sizeX() - 1);
+                int j_plus_1 = clamp(j + 1, 0, grid.sizeY() - 1);
+
+                float phi_i_j = domain.fluidLevelSet()(i, j);
+                float phi_i_minus_1_j = domain.fluidLevelSet()(i_minus_1, j);
+                float phi_i_j_minus_1 = domain.fluidLevelSet()(i, j_minus_1);
+                float phi_i_plus_1_j = domain.fluidLevelSet()(i_plus_1, j);
+                float phi_i_j_plus_1 = domain.fluidLevelSet()(i, j_plus_1);
+
+                // left neighbour
+                // if (grid.cellType(i - 1, j) != SOLID) {
+                if (i - 1 >= 0) {
+                    if (phi_i_minus_1_j < 0) {
+                        alpha_matrix.insert(idx, fluid_indices(i_minus_1, j)) = -u_weights(i, j) * scale_x;
+                    }
+                    theta = max(0.01f, fraction_inside(phi_i_minus_1_j, phi_i_j));
+                    diagonal += u_weights(i, j) * scale_x * (1.f / theta);
+                    // } else {
+
+                    rhs[idx] += u_weights(i, j) * grid.velXHalfIndexed(i, j) / grid.deltaX()
+                                + (1 - u_weights(i, j)) * u_solid / grid.deltaX();
+                    // }
+                }
+                // right neighbour
+                if (i + 1 < grid.sizeX()) {
+                    // if (grid.cellType(i + 1, j) != SOLID) {
+                    if (phi_i_plus_1_j < 0) {
+                        alpha_matrix.insert(idx, fluid_indices(i_plus_1, j)) = -u_weights(i_plus_1, j) * scale_x;
+                    }
+                    theta = max(0.01f, fraction_inside(phi_i_j, phi_i_plus_1_j));
+                    diagonal += u_weights(i_plus_1, j) * scale_x * (1.f / theta);
+                    // } else {
+                    rhs[idx] -= u_weights(i_plus_1, j) * grid.velXHalfIndexed(i_plus_1, j) / grid.deltaX()
+                                + (1 - u_weights(i_plus_1, j)) * u_solid / grid.deltaX();
+                    // }
+                }
+                // bottom neighbour
+                // if (grid.cellType(i, j - 1) != SOLID) {
+                if (j - 1 >= 0) {
+                    if (phi_i_j_minus_1 < 0) {
+                        alpha_matrix.insert(idx, fluid_indices(i, j_minus_1)) = -v_weights(i, j) * scale_y;
+                    }
+                    theta = max(0.01f, fraction_inside(phi_i_j_minus_1, phi_i_j));
+                    diagonal += v_weights(i, j) * scale_y * (1.f / theta);
+                    // } else {
+                    rhs[idx] += v_weights(i, j) * grid.velYHalfIndexed(i, j) / grid.deltaY()
+                                + (1 - v_weights(i, j)) * v_solid / grid.deltaY();
+                    // }
+                }
+                // top neighbour
+                // if (grid.cellType(i, j + 1) != SOLID) {
+                if (j + 1 < grid.sizeY()) {
+                    if (phi_i_j_plus_1 < 0) {
+                        alpha_matrix.insert(idx, fluid_indices(i, j_plus_1)) = -v_weights(i, j_plus_1) * scale_y;
+                    }
+                    theta = max(0.01f, fraction_inside(phi_i_j, phi_i_j_plus_1));
+                    diagonal += v_weights(i, j_plus_1) * scale_y * (1.f / theta);
+                    // } else {
+                    rhs[idx] -= v_weights(i, j_plus_1) * grid.velYHalfIndexed(i, j_plus_1) / grid.deltaY()
+                                + (1 - v_weights(i, j_plus_1)) * v_solid / grid.deltaY();
+                }
+                alpha_matrix.insert(idx, idx) = diagonal;
+            }
+            // }
+        }
+    }
     // Solid boundary fix. THIS ASSUMES THAT ALL LIQUID CELLS ARE CONNECTED WHICH OF COURSE MIGHT BE WRONG FOR
     // VARIOUS TOPOLOGIES
     double mean = 0;
     int counter = 0;
+
+    int fluid_cells = 0;
     for (int j = 0; j < grid.sizeY(); ++j) {
         for (int i = 0; i < grid.sizeX(); ++i) {
-            int idx = i + j * grid.sizeX();
-            if (grid.cellType(i, j) == LIQUID) {
-                if (grid.cellType(i - 1, j) != AIR && grid.cellType(i + 1, j) != AIR && grid.cellType(i, j - 1) != AIR
-                    && grid.cellType(i - 1, j + 1) != AIR) {
-                    mean += rhs[idx];
-                    counter++;
+            if (domain.fluidLevelSet()(i, j) < 0) fluid_cells++;
+        }
+    }
+    if (fluid_cells == (grid.sizeX() - 2) * (grid.sizeY() - 2)) {
+        for (int j = 0; j < grid.sizeY(); ++j) {
+            for (int i = 0; i < grid.sizeX(); ++i) {
+                int idx = fluid_indices(i, j); // i + j * grid.sizeX();
+                int i_minus_1 = clamp(i - 1, 0, grid.sizeX() - 1);
+                int j_minus_1 = clamp(j - 1, 0, grid.sizeY() - 1);
+
+                int i_plus_1 = clamp(i + 1, 0, grid.sizeX() - 1);
+                int j_plus_1 = clamp(j + 1, 0, grid.sizeY() - 1);
+
+                if (domain.fluidLevelSet()(i, j) < 0) {
+                    // Check if not AIR cell
+
+                    if ((domain.fluidLevelSet()(i_minus_1, j) < 0 || domain.solidLevelSet()(i_minus_1, j) <= 0)
+                        && (domain.fluidLevelSet()(i_plus_1, j) < 0 || domain.solidLevelSet()(i_plus_1, j) <= 0)
+                        && (domain.fluidLevelSet()(i, j_minus_1) < 0 || domain.solidLevelSet()(i, j_minus_1) <= 0)
+                        && (domain.fluidLevelSet()(i, i_plus_1) < 0 || domain.solidLevelSet()(i, i_plus_1) <= 0)) {
+                        mean += rhs[idx];
+                        counter++;
+                    }
                 }
             }
         }
-    }
-    mean = mean / counter;
-    for (int j = 0; j < grid.sizeY(); ++j) {
-        for (int i = 0; i < grid.sizeX(); ++i) {
-            int idx = i + j * grid.sizeX();
-            if (grid.cellType(i, j) == LIQUID) {
-                if (grid.cellType(i - 1, j) != AIR && grid.cellType(i + 1, j) != AIR && grid.cellType(i, j - 1) != AIR
-                    && grid.cellType(i - 1, j + 1) != AIR) {
-                    rhs[idx] -= mean;
+        mean = mean / counter;
+        for (int j = 0; j < grid.sizeY(); ++j) {
+            for (int i = 0; i < grid.sizeX(); ++i) {
+                int idx = fluid_indices(i, j); // i + j * grid.sizeX();
+                int i_minus_1 = clamp(i - 1, 0, grid.sizeX() - 1);
+                int j_minus_1 = clamp(j - 1, 0, grid.sizeY() - 1);
+
+                int i_plus_1 = clamp(i + 1, 0, grid.sizeX() - 1);
+                int j_plus_1 = clamp(j + 1, 0, grid.sizeY() - 1);
+                if (domain.fluidLevelSet()(i, j) < 0) {
+                    if ((domain.fluidLevelSet()(i_minus_1, j) < 0 || domain.solidLevelSet()(i_minus_1, j) <= 0)
+                        && (domain.fluidLevelSet()(i_plus_1, j) < 0 || domain.solidLevelSet()(i_plus_1, j) <= 0)
+                        && (domain.fluidLevelSet()(i, j_minus_1) < 0 || domain.solidLevelSet()(i, j_minus_1) <= 0)
+                        && (domain.fluidLevelSet()(i, j_plus_1) < 0 || domain.solidLevelSet()(i, j_plus_1) <= 0)) {
+                        rhs[idx] -= mean;
+                    }
                 }
             }
         }
     }
 
-    solver.set_solver_parameters(1e-15, 1000);
-    bool success = solver.solve(alpha_matrix, rhs, pressure_grid, tolerance, iterations);
-#ifdef PRINT
-    printf("Solver took %d iterations and had residual %e\n", iterations, tolerance);
-#endif // PRINT
-    if (!success) { printf("WARNING: Pressure solve failed!************************************************\n"); }
+    Eigen::VectorXf pressure_grid(system_size);
+    solver.compute(alpha_matrix);
+    pressure_grid = solver.solve(rhs);
 
     for (int j = 0; j < grid.sizeY(); ++j) {
         for (int i = 0; i < grid.sizeX(); ++i) {
-            // int i_minus1 = clamp(i - 1, 0, grid.sizeX() - 1);
-            // int j_minus1 = clamp(j - 1, 0, grid.sizeY() - 1);
-            int idx = i + j * grid.sizeX();
-            int idx_i_minus1 = idx - 1;
-            int idx_j_minus1 = idx - grid.sizeX();
+            int i_minus1 = clamp(i - 1, 0, grid.sizeX() - 1);
+            int j_minus1 = clamp(j - 1, 0, grid.sizeY() - 1);
+            int idx = fluid_indices(i, j);
+            int idx_i_minus1 = fluid_indices(i_minus1, j);
+            int idx_j_minus1 = fluid_indices(i, j_minus1);
             float p = idx >= 0 ? pressure_grid[idx] : 0;
             float p_i_minus1 = idx_i_minus1 >= 0 ? pressure_grid[idx_i_minus1] : 0;
             float p_j_minus1 = idx_j_minus1 >= 0 ? pressure_grid[idx_j_minus1] : 0;
 
+            int i_minus_1 = clamp(i - 1, 0, grid.sizeX() - 1);
+            int j_minus_1 = clamp(j - 1, 0, grid.sizeY() - 1);
 
             // if (idx >= 0 || idx_i_minus1 >= 0 || idx_j_minus1 >= 0) {
-            if (grid.cellType(i, j) == LIQUID || grid.cellType(i - 1, j) == LIQUID) {
-                if (grid.cellType(i, j) == SOLID || grid.cellType(i - 1, j) == SOLID) {
+            if (domain.fluidLevelSet()(i, j) < 0 || domain.fluidLevelSet()(i_minus_1, j) < 0) {
+                if (domain.solidLevelSet()(i, j) <= 0 || domain.solidLevelSet()(i_minus_1, j) <= 0) {
                     grid.setVelXBackBufferHalfIndexed(i, j, 0);
                 } else {
                     float new_vel_x =
@@ -658,8 +899,8 @@ void FluidSimulator::project(MacGrid &grid, float dt) {
                     grid.setVelXBackBufferHalfIndexed(i, j, new_vel_x);
                 }
             }
-            if (grid.cellType(i, j) == LIQUID || grid.cellType(i, j - 1) == LIQUID) {
-                if (grid.cellType(i, j) == SOLID || grid.cellType(i, j - 1) == SOLID) {
+            if (domain.fluidLevelSet()(i, j) < 0 || domain.fluidLevelSet()(i, j_minus_1) < 0) {
+                if (domain.solidLevelSet()(i, j) <= 0 || domain.solidLevelSet()(i, j_minus_1) <= 0) {
                     grid.setVelYBackBufferHalfIndexed(i, j, 0);
                 } else {
                     float new_vel_y =
@@ -672,20 +913,21 @@ void FluidSimulator::project(MacGrid &grid, float dt) {
     grid.swapVelocityBuffers();
 }
 
-void FluidSimulator::enforceDirichlet(MacGrid &grid) {
+void FluidSimulator::enforceDirichlet(FluidDomain &domain) {
+    auto &grid = domain.grid();
     // X vel
     for (int j = 0; j < grid.sizeY(); ++j) {
         for (int i = 0; i < grid.sizeX(); ++i) {
             int i_minus1 = clamp(i - 1, 0, grid.sizeX() - 1);
             int j_minus1 = clamp(j - 1, 0, grid.sizeY() - 1);
             // X velocity
-            if ((grid.cellType(i_minus1, j) == SOLID && grid.velXHalfIndexed(i, j) < 0)
-                || (grid.cellType(i, j) == SOLID && grid.velXHalfIndexed(i, j) > 0))
+            if ((domain.solidLevelSet()(i_minus1, j) <= 0 && grid.velXHalfIndexed(i, j) < 0)
+                || (domain.solidLevelSet()(i, j) <= 0 && grid.velXHalfIndexed(i, j) > 0))
                 grid.setVelXHalfIndexed(i, j, 0);
 
             // Y velocity
-            if ((grid.cellType(i, j_minus1) == SOLID && grid.velYHalfIndexed(i, j) < 0)
-                || (grid.cellType(i, j) == SOLID && grid.velYHalfIndexed(i, j) > 0))
+            if ((domain.solidLevelSet()(i, j_minus1) <= 0 && grid.velYHalfIndexed(i, j) < 0)
+                || (domain.solidLevelSet()(i, j) <= 0 && grid.velYHalfIndexed(i, j) > 0))
                 grid.setVelYHalfIndexed(i, j, 0);
         }
     }

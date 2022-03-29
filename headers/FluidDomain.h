@@ -8,14 +8,17 @@
 
 class FluidSource {
 public:
-    FluidSource();
-    FluidSource(float vel_x, float vel_y,float dx, float dy, int particle_generation_rate, BBox<float> area, float rate_t, float rate_c);
+    FluidSource(LevelSet spawning_region, float vel_x, float vel_y, float dx, float dy, int particle_generation_rate,
+                float rate_t, float rate_c);
+    FluidSource(int size_x, int size_y, float length_x, float length_y);
     ~FluidSource();
-    void update(ParticleSet &particle_set, float dt);
+    void update(MacGrid &grid, ParticleSet &particle_set, float dt);
+
+    inline LevelSet &spawningRegion() { return spawning_region; };
 
 private:
     float dx;
-    float dy; 
+    float dy;
 
     float _vel_x;
     float _vel_y;
@@ -24,7 +27,7 @@ private:
     float rate_c;
 
 
-    BBox<float> spawning_region;
+    LevelSet spawning_region;
     float particle_generation_rate;
 };
 
@@ -49,19 +52,25 @@ public:
     void clearParticleSet();
     void clearFluidSources();
 
-    inline MacGrid &grid() {return _grid;};
-    inline LevelSet &levelSet(){return level_set;};
-    inline ParticleSet &particleSet(){return particle_set;};
+    void construct_level_set_from_marker_particles(LevelSet &level_set);
+
+    inline MacGrid &grid() { return _grid; };
+    inline LevelSet &fluidLevelSet() { return fluid_level_set; };
+    inline LevelSet &solidLevelSet() { return solid_level_set; };
+    inline void setFluidLevelSet(LevelSet &l) { fluid_level_set = l; };
+    inline void setSolidLevelSet(LevelSet &l) { solid_level_set = l; };
+    inline ParticleSet &particleSet() { return particle_set; };
     inline std::vector<FluidSource> &fluidSources() { return fluid_sources; };
 
     void advectParticles(float dt);
 
     void classifyCells();
-    void classifyCells(ParticleSet &particle_set);
 
+    float radius;
 private:
     MacGrid _grid;
-    LevelSet level_set;
+    LevelSet fluid_level_set;
+    LevelSet solid_level_set;
     ParticleSet particle_set;
     std::vector<FluidSource> fluid_sources;
 };

@@ -1,10 +1,12 @@
 #ifndef VEC_H
 #define VEC_H
 
+#include "util.h"
+
 #include <cassert>
 #include <cmath>
 #include <iostream>
-#include "util.h"
+
 
 // Defines a thin wrapper around fixed size C-style arrays, using template parameters,
 // which is useful for dealing with vectors of different dimensions.

@@ -1,4 +1,5 @@
 #include "MacGrid.h"
+// #define SOLID_BOUNDARIES_FILLED
 #define SOLID_BOUNDARIES
 
 MacGrid::MacGrid(int size_x, int size_y, float length_x, float length_y, float ambient_temperature,
@@ -32,7 +33,7 @@ MacGrid::MacGrid(int size_x, int size_y, float length_x, float length_y, float a
 MacGrid::~MacGrid() {}
 
 void MacGrid::clearCellTypeBuffer() {
-#ifdef SOLID_BOUNDARIES
+#if defined SOLID_BOUNDARIES_FILLED
     // Set all to SOLID
     for (int j = 0; j < _SIZE_Y; ++j) {
         for (int i = 0; i < _SIZE_X; ++i) { _cell_type_buffer(i, j) = SOLID; }
@@ -43,15 +44,13 @@ void MacGrid::clearCellTypeBuffer() {
     for (int j = 1; j < _SIZE_Y - 1; ++j) {
         for (int i = 1; i < _SIZE_X - 1; ++i) { _cell_type_buffer(i, j) = LIQUID; }
     }
-#endif
-#ifndef SOLID_BOUNDARIES
-    // Set all to AIR
+#elif defined SOLID_BOUNDARIES
+    // Set all to SOLID
     for (int j = 0; j < _SIZE_Y; ++j) {
-        for (int i = 0; i < _SIZE_X; ++i) { _cell_type_buffer(i, j) = AIR; }
+        for (int i = 0; i < _SIZE_X; ++i) { _cell_type_buffer(i, j) = SOLID; }
     }
-    // Set center to LIQUID
     for (int j = 1; j < _SIZE_Y - 1; ++j) {
-        for (int i = 1; i < _SIZE_X - 1; ++i) { _cell_type_buffer(i, j) = LIQUID; }
+        for (int i = 1; i < _SIZE_X - 1; ++i) { _cell_type_buffer(i, j) = AIR; }
     }
 #endif // !SOLID_BOUNDARIES
 }

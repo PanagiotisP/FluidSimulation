@@ -45,24 +45,23 @@ private:
 
     // void advect_particles(float dt);
     // Semi-Lagrangian advection
-    void advect(MacGrid &grid, float dt);
+    void advect(FluidDomain &domain, float dt);
 
-    void advect_particles(MacGrid &grid, float dt);
+    void advect_particles(FluidDomain &domain, float dt);
     void reseeding(FluidDomain &domain);
     // Add external forces like gravity
-    void add_forces(MacGrid &grid, float dt);
+    void add_forces(FluidDomain &domain, float dt);
 
     // Apply incrompressibility constraint
-    void project(MacGrid &grid, float dt);
+    void project(FluidDomain &domain, float dt);
     // void constrain_velocity();
-    void enforceDirichlet(MacGrid &mac_grid);
+    void enforceDirichlet(FluidDomain &domain);
 
-    void classifyCells(MacGrid &grid, LevelSet &levelSet);
     void add_temperature_source(MacGrid &grid, const ScalarSource &src, float dt);
     void add_concentration_source(MacGrid &grid, const ScalarSource &src, float dt);
     void add_velocity_source(MacGrid &grid, const VectorSource &src, float dt);
 
-    void diffuse_scalar(MacGrid &grid, float dt, float diffuse_rate);
+    void diffuse_scalar(FluidDomain &domain, float dt, float diffuse_rate);
 
     // Implement with std::function
     template <class T, class VectorT = std::vector<T>>
@@ -71,9 +70,5 @@ private:
     
     float calculate_kernel_function(MacGrid& grid, float x, float y);
 
-    // void advectLevelSet(MacGrid& grid, LevelSet& levelSet, float dt);
-    // helpers for pressure projection
-    // void compute_weights();
-    // void solve_pressure(float dt);
-    // void compute_phi
+    void extrapolate_data(FluidDomain& domain, int iterations_n);
 };
