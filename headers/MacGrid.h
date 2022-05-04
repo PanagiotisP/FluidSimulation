@@ -12,9 +12,8 @@
     #include <assert.h>
     #include <iostream>
     #include <memory>
-
-enum CellType { LIQUID, AIR, SOLID };
-
+    #include <openvdb/openvdb.h>
+    #include <openvdb/tools/Interpolation.h>
 // Some comments about the MAC Grid implementation
 // The int arguments in member functions refer to cell indices of the initial MacGrid.
 // As it is staggered, this means that for scalar values taken at the middle of the cell the value (i,j) is returned,
@@ -29,213 +28,291 @@ enum CellType { LIQUID, AIR, SOLID };
 // of the center of a cell)
 
 
-class MacGrid: public GridInterface {
-    public:
-    MacGrid(int size_x, int size_y, float length_x, float length_y, float ambient_temperature,
-            float ambient_concentration);
+class MacGrid {
+public:
+    MacGrid(int size_x, int size_y, float length_x, float length_y);
     ~MacGrid();
 
-    void clearCellTypeBuffer();
+    typedef openvdb::Vec3dGrid::Accessor Accessor;
+    typedef openvdb::tools::GridSampler<openvdb::Vec3dGrid::Accessor, openvdb::tools::StaggeredBoxSampler> BoxSampler;
+
+    inline openvdb::Vec3dGrid::Ptr velFront() { return _vel_front; }
+    inline openvdb::Vec3dGrid::Ptr velBack() { return _vel_back; }
+    inline openvdb::Vec3dGrid::Ptr velPrev() { return _vel_prev; }
+    inline openvdb::Vec3dGrid::Ptr velDiff() { return _vel_diff; }
+    inline void setVelBack(openvdb::Vec3dGrid::Ptr vel_back) { _vel_back = vel_back; }
+
     void updatePreviousVelocityBuffer();
     void updateDiffBuffers();
 
     // Getters
-    inline float temperature(int i, int j) const { return _temperature_front_buffer->value(i, j); };
-
-    inline float temperatureBackBuffer(int i, int j) const { return _temperature_back_buffer->value(i, j); };
-
-    inline float concentration(int i, int j) const { return _concentration_front_buffer->value(i, j); };
-
-    inline float concentrationBackBuffer(int i, int j) const { return _concentration_back_buffer->value(i, j); };
-
-    inline float velX(int i, int j) const {
-        return (_vel_x_front_buffer->value(i, j) + _vel_x_front_buffer->value(i + 1, j)) / 2;
+    inline openvdb::Vec3d velHalfIndexed(Accessor &accessor, openvdb::Coord coord) const { return accessor.getValue(coord); };
+    inline openvdb::Vec3d velHalfIndexed(Accessor &accessor, int k, int j, int i) const {
+        return accessor.getValue(openvdb::Coord(k, j, i));
     };
 
-    inline float velY(int i, int j) const {
-        return (_vel_y_front_buffer->value(i, j) + _vel_y_front_buffer->value(i, j + 1)) / 2;
+    inline openvdb::Vec3d velInterpolatedI(BoxSampler &sampler, openvdb::Vec3d isPoint) const {
+        return sampler.isSample(isPoint);
+    };
+    inline openvdb::Vec3d velInterpolatedI(BoxSampler &sampler, double x, double y, double z) const {
+        return sampler.isSample(openvdb::Vec3d(x, y, z));
     };
 
-    inline float velXHalfIndexed(int i, int j) const { return _vel_x_front_buffer->value(i, j); };
-
-    inline float velYHalfIndexed(int i, int j) const { return _vel_y_front_buffer->value(i, j); };
-
-    inline float velXBackBufferHalfIndexed(int i, int j) const { return _vel_x_back_buffer->value(i, j); };
-
-    inline float velYBackBufferHalfIndexed(int i, int j) const { return _vel_y_back_buffer->value(i, j); };
-
-    inline float velXBackBuffer(int i, int j) const {
-        return (_vel_x_back_buffer->value(i, j) + _vel_x_back_buffer->value(i + 1, j)) / 2;
+    inline openvdb::Vec3d velInterpolatedW(BoxSampler &sampler, openvdb::Vec3d wsPoint) const {
+        return sampler.wsSample(wsPoint);
     };
 
-    inline float velYBackBuffer(int i, int j) const {
-        return (_vel_y_back_buffer->value(i, j) + _vel_y_back_buffer->value(i, j + 1)) / 2;
-    };
-
-    inline float velXInterpolated(float x, float y) const {
-        float v_x = _vel_x_front_buffer->valueInterpolated(x, y - _DELTA_Y * 0.5);
-        // -0.5 Due to the MAC grid structure
-        return v_x;
-    };
-
-    inline float velYInterpolated(float x, float y) const {
-        float v_y = _vel_y_front_buffer->valueInterpolated(x - _DELTA_X * 0.5, y);
-        // -0.5 Due to the MAC grid structure
-        return v_y;
-    };
-
-    inline float temperatureInterpolated(float x, float y) const {
-        // The subtraction on x and y is necessary due to valueInterpolated function working for the staggered grid
-        float temperature = _temperature_front_buffer->valueInterpolated(x - 0.5 * _DELTA_X, y - 0.5 * _DELTA_Y);
-        return temperature;
-    };
-
-    inline float concentrationInterpolated(float x, float y) const {
-        // The subtraction on x and y is necessary due to valueInterpolated function working for the staggered grid
-        float concentration = _concentration_front_buffer->valueInterpolated(x - 0.5 * _DELTA_X, y - 0.5 * _DELTA_Y);
-        return concentration;
-    };
-
-    inline float velXDiffInterpolated(float x, float y) const {
-        float v_x = _vel_x_diff.valueInterpolated(x, y - _DELTA_Y * 0.5);
-        // -0.5 Due to the MAC grid structure
-        return v_x;
-    };
-
-    inline float velYDiffInterpolated(float x, float y) const {
-        float v_y = _vel_y_diff.valueInterpolated(x - _DELTA_X * 0.5, y);
-        // -0.5 Due to the MAC grid structure
-        return v_y;
-    };
-
-    inline float temperatureDiffInterpolated(float x, float y) const {
-        float temperature = temperature_diff.valueInterpolated(x - _DELTA_X * 0.5, y - _DELTA_Y * 0.5);
-        return temperature;
-    };
-
-    inline float concentrationDiffInterpolated(float x, float y) const {
-        float concentration = concentration_diff.valueInterpolated(x - _DELTA_X * 0.5, y - _DELTA_Y * 0.5);
-        return concentration;
-    };
-
-    inline CellType cellType(int i, int j) const {
-        i = clamp(i, 0, _SIZE_X - 1);
-        j = clamp(j, 0, _SIZE_Y - 1);
-        return _cell_type_buffer.value(i, j);
-    };
-
-    inline float divVelX(int i, int j) const {
-        return (_vel_x_front_buffer->value(i + 1, j) - _vel_x_front_buffer->value(i, j)) / _DELTA_X;
-    };
-
-    inline float divVelY(int i, int j) const {
-        return (_vel_y_front_buffer->value(i, j + 1) - _vel_y_front_buffer->value(i, j)) / _DELTA_Y;
+    inline openvdb::Vec3d velInterpolatedW(BoxSampler &sampler, double x, double y, double z) const {
+        return sampler.wsSample(openvdb::Vec3d(x, y, z));
     };
 
     // glm::dmat2 computeVelocityGradientMatrix(int i, int j);
 
     // Setters
-    inline void setTemperature(int i, int j, float temperature) { (*_temperature_front_buffer)(i, j) = temperature; };
+    inline void setVelHalfIndexed(Accessor &accessor, openvdb::Coord coord, openvdb::Vec3d vel) { accessor.setValue(coord, vel); };
 
-    inline void setTemperatureBackBuffer(int i, int j, float temperature) {
-        (*_temperature_back_buffer)(i, j) = temperature;
+    inline void setVelHalfIndexed(Accessor &accessor, int k, int j, int i, openvdb::Vec3d vel) {
+        accessor.setValue(openvdb::Coord(k, j, i), vel);
     };
 
-    inline void setConcentration(int i, int j, float concentration) {
-        (*_concentration_front_buffer)(i, j) = concentration;
+    inline void setVelXHalfIndexed(Accessor &accessor, openvdb::Coord coord, double vel) {
+        openvdb::Vec3d value = accessor.getValue(coord);
+        value[0] = vel;
+        accessor.setValue(coord, value);
     };
 
-    inline void setConcentrationBackBuffer(int i, int j, float concentration) {
-        (*_concentration_back_buffer)(i, j) = concentration;
+    inline void setVelXHalfIndexed(Accessor &accessor, int k, int j, int i, double vel) {
+        openvdb::Vec3d value = accessor.getValue(openvdb::Coord(k, j, i));
+        value[0] = vel;
+        accessor.setValue(openvdb::Coord(k, j, i), value);
     };
 
-    inline void setVelXHalfIndexed(int i, int j, float vel_x) { (*_vel_x_front_buffer)(i, j) = vel_x; };
-
-    inline void setVelYHalfIndexed(int i, int j, float vel_y) { (*_vel_y_front_buffer)(i, j) = vel_y; };
-
-    inline void setVelXBackBuffer(int i, int j, float vel_x) {
-        (*_vel_x_back_buffer)(i, j) = vel_x;
-        (*_vel_x_back_buffer)(i + 1, j) = vel_x;
+    inline void setVelYHalfIndexed(Accessor &accessor, openvdb::Coord coord, double vel) {
+        openvdb::Vec3d value = accessor.getValue(coord);
+        value[1] = vel;
+        accessor.setValue(coord, value);
     };
 
-    inline void setVelYBackBuffer(int i, int j, float vel_y) {
-        (*_vel_y_back_buffer)(i, j) = vel_y;
-        (*_vel_y_back_buffer)(i, j + 1) = vel_y;
+    inline void setVelYHalfIndexed(Accessor &accessor, int k, int j, int i, double vel) {
+        openvdb::Vec3d value = accessor.getValue(openvdb::Coord(k, j, i));
+        value[1] = vel;
+        accessor.setValue(openvdb::Coord(k, j, i), value);
     };
 
-    inline void setVelXBackBufferHalfIndexed(int i, int j, float vel_x) { (*_vel_x_back_buffer)(i, j) = vel_x; };
-
-    inline void setVelYBackBufferHalfIndexed(int i, int j, float vel_y) { (*_vel_y_back_buffer)(i, j) = vel_y; };
-
-    inline void setCellType(int i, int j, CellType cell_type) { _cell_type_buffer(i, j) = cell_type; };
-
-    inline void addToVelXInterpolated(float x, float y, float vel_x) {
-        _vel_x_back_buffer->addToValueInterpolated(x, y - 0.5 * _DELTA_Y, vel_x);
-        // -0.5 Due to the MAC grid structure
+    inline void setVelZHalfIndexed(Accessor &accessor, openvdb::Coord coord, double vel) {
+        openvdb::Vec3d value = accessor.getValue(coord);
+        value[2] = vel;
+        accessor.setValue(coord, value);
     };
 
-    inline void addToVelYInterpolated(float x, float y, float vel_y) {
-        _vel_y_back_buffer->addToValueInterpolated(x - 0.5 * _DELTA_X, y, vel_y);
-        // -0.5 Due to the MAC grid structure
+    inline void setVelZHalfIndexed(Accessor &accessor, int k, int j, int i, double vel) {
+        openvdb::Vec3d value = accessor.getValue(openvdb::Coord(k, j, i));
+        value[2] = vel;
+        accessor.setValue(openvdb::Coord(k, j, i), value);
     };
 
-    inline void addToTemperatureInterpolated(float x, float y, float temperature) {
-        _temperature_back_buffer->addToValueInterpolated(x - 0.5 * _DELTA_X, y - 0.5 * _DELTA_Y, temperature);
+    inline void setVel(Accessor &accessor, int k, int j, int i, openvdb::Vec3d vel) {
+        accessor.setValue(openvdb::Coord(k, j, i), vel);
+        accessor.setValue(openvdb::Coord(k, j, i + 1), vel);
+        accessor.setValue(openvdb::Coord(k, j + 1, i), vel);
+        accessor.setValue(openvdb::Coord(k, j + 1, i + 1), vel);
+        accessor.setValue(openvdb::Coord(k + 1, j, i), vel);
+        accessor.setValue(openvdb::Coord(k + 1, j, i + 1), vel);
+        accessor.setValue(openvdb::Coord(k + 1, j + 1, i), vel);
+        accessor.setValue(openvdb::Coord(k + 1, j + 1, i + 1), vel);
     };
 
-    inline void addToConcentrationInterpolated(float x, float y, float concentration) {
-        _concentration_back_buffer->addToValueInterpolated(x - 0.5 * _DELTA_X, y - 0.5 * _DELTA_Y, concentration);
+    inline void setVel(Accessor &accessor, openvdb::Coord coord, openvdb::Vec3d vel) {
+        accessor.setValue(coord, vel);
+        accessor.setValue(coord.offsetBy(0, 0, 1), vel);
+        accessor.setValue(coord.offsetBy(0, 1, 0), vel);
+        accessor.setValue(coord.offsetBy(0, 1, 1), vel);
+        accessor.setValue(coord.offsetBy(1, 0, 0), vel);
+        accessor.setValue(coord.offsetBy(1, 0, 1), vel);
+        accessor.setValue(coord.offsetBy(1, 1, 0), vel);
+        accessor.setValue(coord.offsetBy(1, 1, 1), vel);
     };
 
-    inline void setVelXInterpolated(float x, float y, float vel_x) {
-        _vel_x_back_buffer->setValueInterpolated(x, y - 0.5 * _DELTA_Y, vel_x);
-        // -0.5 Due to the MAC grid structure
+    inline void setVelX(Accessor &accessor, int k, int j, int i, double vel) {
+        openvdb::Vec3d value = accessor.getValue(openvdb::Coord(k, j, i));
+        value[0] = vel;
+        accessor.setValue(openvdb::Coord(k, j, i), value);
+        accessor.setValue(openvdb::Coord(k, j, i + 1), value);
+        accessor.setValue(openvdb::Coord(k, j + 1, i), value);
+        accessor.setValue(openvdb::Coord(k, j + 1, i + 1), value);
+        accessor.setValue(openvdb::Coord(k + 1, j, i), value);
+        accessor.setValue(openvdb::Coord(k + 1, j, i + 1), value);
+        accessor.setValue(openvdb::Coord(k + 1, j + 1, i), value);
+        accessor.setValue(openvdb::Coord(k + 1, j + 1, i + 1), value);
     };
 
-    inline void setVelYInterpolated(float x, float y, float vel_y) {
-        _vel_y_back_buffer->setValueInterpolated(x - 0.5 * _DELTA_X, y, vel_y);
-        // -0.5 Due to the MAC grid structure
+    inline void setVelX(Accessor &accessor, openvdb::Coord coord, double vel) {
+        openvdb::Vec3d value = accessor.getValue(coord);
+        value[0] = vel;
+        accessor.setValue(coord, value);
+        accessor.setValue(coord.offsetBy(0, 0, 1), value);
+        accessor.setValue(coord.offsetBy(0, 1, 0), value);
+        accessor.setValue(coord.offsetBy(0, 1, 1), value);
+        accessor.setValue(coord.offsetBy(1, 0, 0), value);
+        accessor.setValue(coord.offsetBy(1, 0, 1), value);
+        accessor.setValue(coord.offsetBy(1, 1, 0), value);
+        accessor.setValue(coord.offsetBy(1, 1, 1), value);
     };
 
-    inline void setTemperatureInterpolated(float x, float y, float temperature) {
-        _temperature_back_buffer->setValueInterpolated(x - 0.5 * _DELTA_X, y - 0.5 * _DELTA_Y, temperature);
+    inline void setVelY(Accessor &accessor, int k, int j, int i, double vel) {
+        openvdb::Vec3d value = accessor.getValue(openvdb::Coord(k, j, i));
+        value[1] = vel;
+        accessor.setValue(openvdb::Coord(k, j, i), value);
+        accessor.setValue(openvdb::Coord(k, j, i + 1), value);
+        accessor.setValue(openvdb::Coord(k, j + 1, i), value);
+        accessor.setValue(openvdb::Coord(k, j + 1, i + 1), value);
+        accessor.setValue(openvdb::Coord(k + 1, j, i), value);
+        accessor.setValue(openvdb::Coord(k + 1, j, i + 1), value);
+        accessor.setValue(openvdb::Coord(k + 1, j + 1, i), value);
+        accessor.setValue(openvdb::Coord(k + 1, j + 1, i + 1), value);
     };
 
-    inline void setConcentrationInterpolated(float x, float y, float concentration) {
-        _concentration_back_buffer->setValueInterpolated(x - 0.5 * _DELTA_X, y - 0.5 * _DELTA_Y, concentration);
+    inline void setVelY(Accessor &accessor, openvdb::Coord coord, double vel) {
+        openvdb::Vec3d value = accessor.getValue(coord);
+        value[1] = vel;
+        accessor.setValue(coord, value);
+        accessor.setValue(coord.offsetBy(0, 0, 1), value);
+        accessor.setValue(coord.offsetBy(0, 1, 0), value);
+        accessor.setValue(coord.offsetBy(0, 1, 1), value);
+        accessor.setValue(coord.offsetBy(1, 0, 0), value);
+        accessor.setValue(coord.offsetBy(1, 0, 1), value);
+        accessor.setValue(coord.offsetBy(1, 1, 0), value);
+        accessor.setValue(coord.offsetBy(1, 1, 1), value);
+    };
+
+    inline void setVelZ(Accessor &accessor, int k, int j, int i, double vel) {
+        openvdb::Vec3d value = accessor.getValue(openvdb::Coord(k, j, i));
+        value[2] = vel;
+        accessor.setValue(openvdb::Coord(k, j, i), value);
+        accessor.setValue(openvdb::Coord(k, j, i + 1), value);
+        accessor.setValue(openvdb::Coord(k, j + 1, i), value);
+        accessor.setValue(openvdb::Coord(k, j + 1, i + 1), value);
+        accessor.setValue(openvdb::Coord(k + 1, j, i), value);
+        accessor.setValue(openvdb::Coord(k + 1, j, i + 1), value);
+        accessor.setValue(openvdb::Coord(k + 1, j + 1, i), value);
+        accessor.setValue(openvdb::Coord(k + 1, j + 1, i + 1), value);
+    };
+
+    inline void setVelZ(Accessor &accessor, openvdb::Coord coord, double vel) {
+        openvdb::Vec3d value = accessor.getValue(coord);
+        value[2] = vel;
+        accessor.setValue(coord, value);
+        accessor.setValue(coord.offsetBy(0, 0, 1), value);
+        accessor.setValue(coord.offsetBy(0, 1, 0), value);
+        accessor.setValue(coord.offsetBy(0, 1, 1), value);
+        accessor.setValue(coord.offsetBy(1, 0, 0), value);
+        accessor.setValue(coord.offsetBy(1, 0, 1), value);
+        accessor.setValue(coord.offsetBy(1, 1, 0), value);
+        accessor.setValue(coord.offsetBy(1, 1, 1), value);
+    };
+
+    inline void addToVelInterpolated(Accessor &accessor, float x, float y, float z, openvdb::Vec3d value) {
+        // Calculate indices
+        auto isPoint = i2w_transform->worldToIndex(openvdb::Vec3d(x, y, z));
+        const int i = isPoint[0];
+        const int j = isPoint[1];
+        const int k = isPoint[2];
+
+        const double i_frac = isPoint[0] - i;
+        const double j_frac = isPoint[1] - j;
+        const double k_frac = isPoint[2] - k;
+
+        // Spread in z
+        openvdb::Vec3d value_0 = (1 - k_frac) * value;
+        openvdb::Vec3d value_1 = k_frac * value;
+
+        // Spread in y
+        openvdb::Vec3d value_00 = (1 - j_frac) * value_0;
+        openvdb::Vec3d value_10 = j_frac * value_0;
+        openvdb::Vec3d value_01 = (1 - j_frac) * value_1;
+        openvdb::Vec3d value_11 = j_frac * value_1;
+
+        // Spread in x
+        openvdb::Vec3d value_000 = (1 - i_frac) * value_00;
+        openvdb::Vec3d value_100 = i_frac * value_00;
+        openvdb::Vec3d value_010 = (1 - i_frac) * value_10;
+        openvdb::Vec3d value_110 = i_frac * value_10;
+        openvdb::Vec3d value_001 = (1 - i_frac) * value_01;
+        openvdb::Vec3d value_101 = i_frac * value_01;
+        openvdb::Vec3d value_011 = (1 - i_frac) * value_11;
+        openvdb::Vec3d value_111 = i_frac * value_11;
+
+        auto prev_v_000 = accessor.getValue(openvdb::Coord(i, j, k));
+        auto prev_v_100 = accessor.getValue(openvdb::Coord(i + 1, j, k));
+        auto prev_v_010 = accessor.getValue(openvdb::Coord(i, j + 1, k));
+        auto prev_v_110 = accessor.getValue(openvdb::Coord(i + 1, j + 1, k));
+        auto prev_v_001 = accessor.getValue(openvdb::Coord(i, j, k + 1));
+        auto prev_v_101 = accessor.getValue(openvdb::Coord(i + 1, j, k + 1));
+        auto prev_v_011 = accessor.getValue(openvdb::Coord(i, j + 1, k + 1));
+        auto prev_v_111 = accessor.getValue(openvdb::Coord(i + 1, j + 1, k + 1));
+
+
+        // Write data
+        accessor.setValue(openvdb::Coord(i, j, k), prev_v_000 + value_000);
+        accessor.setValue(openvdb::Coord(i + 1, j, k), prev_v_100 + value_100);
+        accessor.setValue(openvdb::Coord(i, j + 1, k), prev_v_010 + value_010);
+        accessor.setValue(openvdb::Coord(i + 1, j + 1, k), prev_v_110 + value_110);
+        accessor.setValue(openvdb::Coord(i, j, k + 1), prev_v_001 + value_001);
+        accessor.setValue(openvdb::Coord(i + 1, j, k + 1), prev_v_101 + value_101);
+        accessor.setValue(openvdb::Coord(i, j + 1, k + 1), prev_v_011 + value_011);
+        accessor.setValue(openvdb::Coord(i + 1, j + 1, k + 1), prev_v_111 + value_111);
+    };
+
+    inline void setVelInterpolated(Accessor &accessor, float x, float y, float z, openvdb::Vec3d value) {
+        // Calculate indices
+        auto isPoint = i2w_transform->worldToIndex(openvdb::Vec3d(x, y, z));
+        const int i = isPoint[0];
+        const int j = isPoint[1];
+        const int k = isPoint[2];
+
+        const double i_frac = isPoint[0] - i;
+        const double j_frac = isPoint[1] - j;
+        const double k_frac = isPoint[2] - k;
+
+        // Spread in z
+        openvdb::Vec3d value_0 = (1 - k_frac) * value;
+        openvdb::Vec3d value_1 = k_frac * value;
+
+        // Spread in y
+        openvdb::Vec3d value_00 = (1 - j_frac) * value_0;
+        openvdb::Vec3d value_10 = j_frac * value_0;
+        openvdb::Vec3d value_01 = (1 - j_frac) * value_1;
+        openvdb::Vec3d value_11 = j_frac * value_1;
+
+        // Spread in x
+        openvdb::Vec3d value_000 = (1 - i_frac) * value_00;
+        openvdb::Vec3d value_100 = i_frac * value_00;
+        openvdb::Vec3d value_010 = (1 - i_frac) * value_10;
+        openvdb::Vec3d value_110 = i_frac * value_10;
+        openvdb::Vec3d value_001 = (1 - i_frac) * value_01;
+        openvdb::Vec3d value_101 = i_frac * value_01;
+        openvdb::Vec3d value_011 = (1 - i_frac) * value_11;
+        openvdb::Vec3d value_111 = i_frac * value_11;
+
+        // Write data
+        accessor.setValue(openvdb::Coord(i, j, k), value_000);
+        accessor.setValue(openvdb::Coord(i + 1, j, k), value_100);
+        accessor.setValue(openvdb::Coord(i, j + 1, k), value_010);
+        accessor.setValue(openvdb::Coord(i + 1, j + 1, k), value_110);
+        accessor.setValue(openvdb::Coord(i, j, k + 1), value_001);
+        accessor.setValue(openvdb::Coord(i + 1, j, k + 1), value_101);
+        accessor.setValue(openvdb::Coord(i, j + 1, k + 1), value_011);
+        accessor.setValue(openvdb::Coord(i + 1, j + 1, k + 1), value_111);
     };
 
     void swapVelocityBuffers();
-    void swapTemperatureBuffers();
-    void swapConcentrationBuffers();
 
-    private:
-    // Velocity grids need front buffers and back buffers
-    // Normally read from front buffers and write to back buffers, then swap
-    std::unique_ptr< Grid<float> > _vel_x_front_buffer;
-    std::unique_ptr< Grid<float> > _vel_y_front_buffer;
-
-    std::unique_ptr< Grid<float> > _vel_x_back_buffer;
-    std::unique_ptr< Grid<float> > _vel_y_back_buffer;
-
-    std::unique_ptr< Grid<float> > _temperature_front_buffer;
-    std::unique_ptr< Grid<float> > _temperature_back_buffer;
-
-    std::unique_ptr< Grid<float> > _concentration_front_buffer;
-    std::unique_ptr< Grid<float> > _concentration_back_buffer;
-
-    Grid<float> _vel_x_previous;
-    Grid<float> _vel_y_previous;
-    Grid<float> temperature_previous;
-    Grid<float> concentration_previous;
-
-
-    Grid<float> _vel_x_diff;
-    Grid<float> _vel_y_diff;
-    Grid<float> temperature_diff;
-    Grid<float> concentration_diff;
-
-    Grid<CellType> _cell_type_buffer;
+private:
+    openvdb::Vec3dGrid::Ptr _vel_front;
+    openvdb::Vec3dGrid::Ptr _vel_back;
+    openvdb::Vec3dGrid::Ptr _vel_prev;
+    openvdb::Vec3dGrid::Ptr _vel_diff;
+    openvdb::math::Transform::Ptr i2w_transform;
 };
 
 #endif

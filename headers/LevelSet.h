@@ -2,47 +2,57 @@
 #define LEVELSET_H
 
 #include "Grid.h"
+#include "ParticleSet.h"
 #include "util.h"
 #include "vec.h"
 
 #include <functional>
 #include <iostream>
 #include <math.h>
+#include <openvdb/openvdb.h>
+#include <openvdb/tools/Interpolation.h>
 
 typedef std::function<float(float, float)> DistanceFunction;
 
-class LevelSet: public Grid<float> {
+class ParticleSet;
+
+class LevelSet {
 public:
-    LevelSet(int size_x, int size_y, float length_x, float length_y);
+    typedef openvdb::tools::GridSampler< openvdb::FloatGrid::Accessor, openvdb::tools::BoxSampler > BoxSampler;
+    typedef openvdb::FloatGrid::Accessor FloatAccessor;
+    LevelSet(openvdb::FloatGrid::Ptr level_set);
     ~LevelSet();
 
-    float distance(int from_i, int from_j, int to_i, int to_j);
+    void construct_from_points(ParticleSet &points, float voxel_size);
 
-    float computeUpwindDiffX(int i, int j);
-    float computeUpwindDiffY(int i, int j);
-    float computeUpwindGradientX(int i, int j, float vel_x);
-    float computeUpwindGradientY(int i, int j, float vel_y);
-    void construct_from_edges(const std::vector<Vec2f> &points, bool inverse=false);
-    void construct_from_points(const std::vector<Vec2f> &points);
-    void construct_from_known_geometry(DistanceFunction f);
+    inline openvdb::FloatGrid::Accessor getAccessor() { return _level_set->getAccessor(); };
+    inline BoxSampler getBoxSampler() { return BoxSampler(_level_set->getAccessor(), _level_set->transform()); };
+    float valueInterpolatedI(BoxSampler &sampler, float x, float y, float z);
+    float valueInterpolatedI(BoxSampler &sampler, openvdb::Vec3R point);
+    float valueInterpolatedW(BoxSampler &sampler, float x, float y, float z);
+    float valueInterpolatedW(BoxSampler &sampler, openvdb::Vec3R point);
 
-    void union_level_set(LevelSet & level_set);
-    void intersect_level_set(LevelSet & level_set);
+    inline openvdb::CoordBBox getActiveCoordBBox() { return _level_set->evalActiveVoxelBoundingBox(); };
 
-    void add_to_set(float val);
+    void unionLevelSet(LevelSet &level_set);
+    void intersectionLevelSet(LevelSet &level_set);
+    void differenceLevelSet(LevelSet &level_set);
+
+    inline openvdb::FloatGrid::Ptr getLevelSet() { return _level_set; };
+    inline void setLevelSet(openvdb::FloatGrid::Ptr const & level_set) { _level_set = level_set; };
+
     // Takes an inside-outside level set that is far from sdf and produces sdf
     void redistance();
 
     LevelSet invert();
     friend std::ostream &operator<<(std::ostream &out, LevelSet &l);
+    static double fraction_inside(double phi_left, double phi_right);
+    static double fraction_inside(double phi_bl, double phi_br, double phi_tl, double phi_tr);
+    static double fraction_inside(double phi_bl, double phi_br, double phi_tl, double phi_tr, double phi_center);
+    static void cycle_array(double *arr, int size);
 
 private:
-    // Eikonal PDE for distance solver
-    // Propagates a level set that is defined correctly near the surface boundary to the whole grid
-    // Markers indicate which grid cells have fixed values from initialisation
-    // Cross markers indicate which grid edges have crossings, that help us to correctly evaluate the inside-outside
-    void fast_sweeping(Grid<int> &markers, bool isSigned, int max_iters = 2);
-    void transform_to_signed_distance(Grid<int> &cross_markers, bool inverse);
+    openvdb::FloatGrid::Ptr _level_set;
 };
 
 #endif

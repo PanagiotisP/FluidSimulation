@@ -7,10 +7,10 @@
 #include <SFML/Graphics.hpp>
 
 #define WINDOW_SIZE      800
-#define SHOW_PARTICLES   false
-#define SHOW_VECTORS     false
-#define SHOW_GRID_VOXELS false
-#define SHOW_LEVEL_SETS  true
+#define SHOW_PARTICLES   true
+#define SHOW_VECTORS     true
+#define SHOW_GRID_VOXELS true
+#define SHOW_LEVEL_SETS  false
 // #define SMOKE
 #define PI 3.14159265f
 
