@@ -5,7 +5,6 @@
 #include <Eigen/Geometry>
 #include <functional>
 #include <iomanip>
-#include <openvdb/tools/ChangeBackground.h>
 #include <openvdb/tools/Composite.h>
 #include <openvdb/tools/ParticlesToLevelSet.h>
 
@@ -32,12 +31,10 @@ float LevelSet::valueInterpolatedI(LevelSet::BoxSampler &sampler, openvdb::Vec3R
 
 void LevelSet::construct_from_points(ParticleSet &points, float voxel_size) {
     _level_set->clear();
-    openvdb::tools::changeBackground(_level_set->tree(), openvdb::LEVEL_SET_HALF_WIDTH * voxel_size);
     openvdb::tools::ParticlesToLevelSet<openvdb::FloatGrid> raster(*_level_set);
     raster.setRmin(points.getRadius());
     raster.rasterizeSpheres(points, points.getRadius());
     raster.finalize(true);
-    openvdb::tools::changeBackground(_level_set->tree(), points.getRadius());
 }
 
 void LevelSet::unionLevelSet(LevelSet &level_set) {
