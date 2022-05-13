@@ -40,6 +40,21 @@ public:
     inline openvdb::Vec3dGrid::Ptr velBack() { return _vel_back; }
     inline openvdb::Vec3dGrid::Ptr velPrev() { return _vel_prev; }
     inline openvdb::Vec3dGrid::Ptr velDiff() { return _vel_diff; }
+    inline openvdb::MaskGrid::Ptr validUFront() { return valid_mask_u_front_buffer; };
+    inline openvdb::MaskGrid::Ptr validUBack() { return valid_mask_u_back_buffer; };
+    inline openvdb::MaskGrid::Ptr validVFront() { return valid_mask_v_front_buffer; };
+    inline openvdb::MaskGrid::Ptr validVBack() { return valid_mask_v_back_buffer; };
+    inline openvdb::MaskGrid::Ptr validWFront() { return valid_mask_w_front_buffer; };
+    inline openvdb::MaskGrid::Ptr validWBack() { return valid_mask_w_back_buffer; };
+
+    inline openvdb::FloatGrid::Ptr uWeights() { return u_weights; };
+    inline openvdb::FloatGrid::Ptr vWeights() { return v_weights; };
+    inline openvdb::FloatGrid::Ptr wWeights() { return w_weights; };
+    
+
+    inline void setValidUBack(openvdb::MaskGrid::Ptr mask) { valid_mask_u_back_buffer = mask; }
+    inline void setValidWBack(openvdb::MaskGrid::Ptr mask) { valid_mask_w_back_buffer = mask; }
+    inline void setValidVBack(openvdb::MaskGrid::Ptr mask) { valid_mask_v_back_buffer = mask; }
     inline void setVelBack(openvdb::Vec3dGrid::Ptr vel_back) { _vel_back = vel_back; }
 
     void updatePreviousVelocityBuffer();
@@ -306,6 +321,7 @@ public:
     };
 
     void swapVelocityBuffers();
+    void swapValidMasks();
 
 private:
     openvdb::Vec3dGrid::Ptr _vel_front;
@@ -313,6 +329,16 @@ private:
     openvdb::Vec3dGrid::Ptr _vel_prev;
     openvdb::Vec3dGrid::Ptr _vel_diff;
     openvdb::math::Transform::Ptr i2w_transform;
+    openvdb::MaskGrid::Ptr valid_mask_u_front_buffer;
+    openvdb::MaskGrid::Ptr valid_mask_u_back_buffer;
+    openvdb::MaskGrid::Ptr valid_mask_v_front_buffer;
+    openvdb::MaskGrid::Ptr valid_mask_v_back_buffer;
+    openvdb::MaskGrid::Ptr valid_mask_w_front_buffer;
+    openvdb::MaskGrid::Ptr valid_mask_w_back_buffer;
+
+    openvdb::FloatGrid::Ptr u_weights;
+    openvdb::FloatGrid::Ptr v_weights;
+    openvdb::FloatGrid::Ptr w_weights;
 };
 
 #endif
