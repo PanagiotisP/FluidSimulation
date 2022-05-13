@@ -37,7 +37,7 @@ private:
 
     // Apply incrompressibility constraint
     void project(FluidDomain &domain, float dt);
-    // void constrain_velocity();
+    void constrain_velocity(FluidDomain &domain);
     void enforceDirichlet(FluidDomain &domain);
 
     double calculate_kernel_function(double x, double y, double z);

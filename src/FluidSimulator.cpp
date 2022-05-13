@@ -584,6 +584,12 @@ void FluidSimulator::advance_flip_pic(FluidDomain &domain, float t_frame, float 
         extrapolate_data_duration += std::chrono::duration_cast<std::chrono::milliseconds>(t_end - t_start);
         print_velocity_field(domain.grid(), "after extrapolation");
 
+        t_start = std::chrono::high_resolution_clock::now();
+        constrain_velocity(domain);
+        t_end = std::chrono::high_resolution_clock::now();
+        auto constrain_velocty_duration = std::chrono::duration_cast<std::chrono::milliseconds>(t_end - t_start);
+        print_velocity_field(domain.grid(), "after constrain");
+
         // Eulerian grid part END
 
         domain.grid().updateDiffBuffers();
@@ -601,10 +607,11 @@ void FluidSimulator::advance_flip_pic(FluidDomain &domain, float t_frame, float 
 
 
         printf(
-            "update %.3f, construct %.3f, reseeding_duration %.3f, transfer grid %.3f, add forces %.3f, project %.3f, transfer particles %.3f, advect particles %.3f\n",
+            "update %.3f, construct %.3f, reseeding_duration %.3f, transfer grid %.3f, add forces %.3f, project %.3f, extrapolate %.3f, constrain_velocty_duration %.3f, transfer particles %.3f, advect particles %.3f\n",
             update_duration.count() / 1000.f, constructFluidLevelSetFromMarkerParticles_duration.count() / 1000.f,
             reseeding_duration.count() / 1000.f, transfer_from_particles_to_grid_duration.count() / 1000.f,
             add_forces_duration.count() / 1000.f, project_duration.count() / 1000.f,
+            extrapolate_data_duration.count() / 1000.f, constrain_velocty_duration.count() / 1000.f,
             transfer_from_grid_to_particles_duration.count() / 1000.f, advectParticles_duration.count() / 1000.f);
         t += timestep;
     }
@@ -935,6 +942,78 @@ void FluidSimulator::enforceDirichlet(FluidDomain &domain) {
             || (solidAccessor.getValue(coord) <= 0 && grid.velHalfIndexed(vel_accessor, coord)[2] > 0))
             grid.setVelZHalfIndexed(vel_accessor, coord, 0);
     }
+}
+
+void FluidSimulator::constrain_velocity(FluidDomain &domain) {
+    auto &grid = domain.grid();
+    auto gradient = openvdb::tools::gradient(*domain.solidLevelSet().getLevelSet());
+    grid.setVelBack(grid.velFront()->deepCopy());
+
+    grid.uWeights()->tree().topologyIntersection(domain.solidLevelSet().getLevelSet()->tree());
+    grid.vWeights()->tree().topologyIntersection(domain.solidLevelSet().getLevelSet()->tree());
+    grid.wWeights()->tree().topologyIntersection(domain.solidLevelSet().getLevelSet()->tree());
+
+    auto u_weights_accessor = grid.uWeights()->getAccessor();
+    auto v_weights_accessor = grid.vWeights()->getAccessor();
+    auto w_weights_accessor = grid.wWeights()->getAccessor();
+    auto vel_back_accessor = grid.velBack()->getAccessor();
+
+    openvdb::tools::GridSampler<openvdb::Vec3SGrid::Accessor, openvdb::tools::BoxSampler> grad_staggered_x_sampler(
+        gradient->getAccessor(), gradient->transform());
+    openvdb::tools::GridSampler<openvdb::Vec3SGrid::Accessor, openvdb::tools::BoxSampler> grad_staggered_y_sampler(
+        gradient->getAccessor(), gradient->transform());
+    openvdb::tools::GridSampler<openvdb::Vec3SGrid::Accessor, openvdb::tools::BoxSampler> grad_staggered_z_sampler(
+        gradient->getAccessor(), gradient->transform());
+
+    openvdb::tools::GridSampler<openvdb::Vec3DGrid::Accessor, openvdb::tools::StaggeredBoxSampler>
+        vel_staggered_x_sampler(grid.velFront()->getAccessor(), grid.velFront()->transform());
+    openvdb::tools::GridSampler<openvdb::Vec3DGrid::Accessor, openvdb::tools::StaggeredBoxSampler>
+        vel_staggered_y_sampler(grid.velFront()->getAccessor(), grid.velFront()->transform());
+    openvdb::tools::GridSampler<openvdb::Vec3DGrid::Accessor, openvdb::tools::StaggeredBoxSampler>
+        vel_staggered_z_sampler(grid.velFront()->getAccessor(), grid.velFront()->transform());
+
+    auto unionMask = openvdb::createGrid<openvdb::MaskGrid>();
+    unionMask->tree().topologyUnion(grid.uWeights()->tree());
+    unionMask->tree().topologyUnion(grid.vWeights()->tree());
+    unionMask->tree().topologyUnion(grid.wWeights()->tree());
+
+    for (auto iter = unionMask->beginValueOn(); iter; ++iter) {
+        auto coord = iter.getCoord();
+        openvdb::Vec3d newVel = vel_back_accessor.getValue(coord);
+        if (u_weights_accessor.getValue(coord) == 0) {
+            // auto normal = grad_staggered_x_accessor.getValue(coord).unit();
+            auto normal = grad_staggered_x_sampler.isSample(coord.asVec3d() - openvdb::Vec3d(0.5, 0, 0)).unit();
+            // auto vel = vel_staggered_x_accessor.getValue(coord);
+            auto vel = vel_staggered_x_sampler.isSample(coord.asVec3d() - openvdb::Vec3d(0.5, 0, 0));
+            auto perp_component = normal.dot(vel);
+            auto projection = perp_component * normal;
+            auto tangential = vel - projection;
+            newVel[0] = tangential[0];
+        }
+        if (v_weights_accessor.getValue(coord) == 0) {
+            // auto normal = grad_staggered_y_accessor.getValue(coord).unit();
+            auto normal = grad_staggered_y_sampler.isSample(coord.asVec3d() - openvdb::Vec3d(0, 0.5, 0)).unit();
+            // auto vel = vel_staggered_y_accessor.getValue(coord);
+            auto vel = vel_staggered_y_sampler.isSample(coord.asVec3d() - openvdb::Vec3d(0, 0.5, 0));
+            auto perp_component = normal.dot(vel);
+            auto projection = perp_component * normal;
+            auto tangential = vel - projection;
+            newVel[1] = tangential[1];
+        }
+        if (w_weights_accessor.getValue(coord) == 0) {
+            // auto normal = grad_staggered_z_accessor.getValue(coord).unit();
+            auto normal = grad_staggered_z_sampler.isSample(coord.asVec3d() - openvdb::Vec3d(0, 0, 0.5)).unit();
+            // auto vel = vel_staggered_z_accessor.getValue(coord);
+            auto vel = vel_staggered_z_sampler.isSample(coord.asVec3d() - openvdb::Vec3d(0, 0, 0.5));
+            auto perp_component = normal.dot(vel);
+            auto projection = perp_component * normal;
+            auto tangential = vel - projection;
+            newVel[2] = tangential[2];
+        }
+        grid.setVelHalfIndexed(vel_back_accessor, coord, newVel);
+    }
+
+    grid.swapVelocityBuffers();
 }
 
 double FluidSimulator::calculate_kernel_function(double x, double y, double z) {
