@@ -10,8 +10,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 set(SRC_FILES src/FluidSimulator.cpp src/FluidDomain.cpp src/Grid.cpp src/LevelSet.cpp src/MacGrid.cpp src/ParticleSet.cpp src/Renderer.cpp main.cpp)
 # set(SRC_FILES main.cpp)
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /O2" )
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /O2" )
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /O2 /openmp" )
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /O2 /openmp" )
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /bigobj" )
 
 if (CMAKE_BUILD_TYPE STREQUAL "Debug")

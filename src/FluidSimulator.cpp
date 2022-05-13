@@ -663,7 +663,10 @@ void FluidSimulator::project(FluidDomain &domain, float dt) {
     auto &grid = domain.grid();
     int system_size = 0;
     // Solver of linear system
-    Eigen::ConjugateGradient<Eigen::SparseMatrix<double, 1 > > solver;
+
+    Eigen::setNbThreads(8);
+    Eigen::ConjugateGradient<Eigen::SparseMatrix<double, 1 >, Eigen::UpLoType::Lower | Eigen::UpLoType::Upper > solver;
+    solver.setTolerance(1e-7);
     // Laplacian matrix
     Eigen::SparseMatrix<double, 1> alpha_matrix;
 
