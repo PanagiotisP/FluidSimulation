@@ -554,6 +554,9 @@ void FluidSimulator::advance_flip_pic(FluidDomain &domain, float t_frame, float 
             std::chrono::duration_cast<std::chrono::milliseconds>(t_end - t_start);
         print_velocity_field(domain.grid(), "after transfer");
 
+        domain.grid().validUFront()->tree().topologyUnion(domain.grid().velFront()->tree());
+        domain.grid().validVFront()->tree().topologyUnion(domain.grid().velFront()->tree());
+        domain.grid().validWFront()->tree().topologyUnion(domain.grid().velFront()->tree());
         t_start = std::chrono::high_resolution_clock::now();
         extrapolate_data(domain, 2);
         t_end = std::chrono::high_resolution_clock::now();
