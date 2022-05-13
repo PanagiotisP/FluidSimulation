@@ -320,17 +320,17 @@ void FluidSimulator::transfer_from_particles_to_grid(FluidDomain &domain) {
 
 void FluidSimulator::transfer_from_grid_to_particles(FluidDomain &domain, float flip_pic_ratio = 0.98) {
     MacGrid &grid = domain.grid();
-    openvdb::tools::GridSampler<openvdb::Vec3dGrid, openvdb::tools::StaggeredBoxSampler> vel_sampler(
-        *domain.grid().velFront());
-    openvdb::tools::GridSampler<openvdb::Vec3dGrid, openvdb::tools::StaggeredBoxSampler> vel_diff_sampler(
-        *domain.grid().velDiff());
-    tbb::parallel_for(tbb::blocked_range<int>(0, domain.particleSet().size()), [&](tbb::blocked_range<int> range) {
+    tbb::parallel_for(tbb::blocked_range<int>(0, domain.particleSet().size(), 1), [&](tbb::blocked_range<int> range) {
+        openvdb::tools::GridSampler<openvdb::Vec3dGrid::Accessor, openvdb::tools::StaggeredBoxSampler> vel_sampler(
+            domain.grid().velFront()->getAccessor(), domain.grid().velFront()->transform());
+        openvdb::tools::GridSampler<openvdb::Vec3dGrid::Accessor, openvdb::tools::StaggeredBoxSampler> vel_diff_sampler(
+            domain.grid().velDiff()->getAccessor(), domain.grid().velDiff()->transform());
         for (int i = range.begin(); i < range.end(); ++i) {
             auto &p = domain.particleSet()[i];
-            openvdb::Vec3d pic_vel = vel_sampler.isSample(p->pos());
-            openvdb::Vec3d flip_vel = p->vel() + vel_diff_sampler.isSample(p->pos());
+            openvdb::Vec3d pic_vel = vel_sampler.isSample(p.pos());
+            openvdb::Vec3d flip_vel = p.vel() + vel_diff_sampler.isSample(p.pos());
 
-            p->setVelocity(pic_vel * (1 - flip_pic_ratio) + flip_vel * flip_pic_ratio);
+            p.setVelocity(pic_vel * (1 - flip_pic_ratio) + flip_vel * flip_pic_ratio);
         }
     });
 }
