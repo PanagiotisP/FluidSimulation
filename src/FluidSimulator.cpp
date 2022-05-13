@@ -633,10 +633,10 @@ void FluidSimulator::advance_flip_pic(FluidDomain &domain, float t_frame, float 
 }
 
 float FluidSimulator::compute_cfl(FluidDomain &domain) {
-    auto & grid = domain.grid();
-    auto min_max = openvdb::tools::minMax(grid.velFront()->tree());
-    auto max_vector = openvdb::math::maxComponent(min_max.max(), openvdb::math::Abs(min_max.min()));
-    double max_vel = max(max_vector[0], max_vector[1], max_vector[2]);
+    auto &grid = domain.grid();
+    openvdb::Vec3d minVector, maxVector;
+    grid.velFront()->evalMinMax(minVector, maxVector);
+    double max_vel = max(maxVector[0], maxVector[1], maxVector[2]);
     max_vel += sqrt(5 * max(domain.voxelSize(), domain.voxelSize()) * grav);
     return min(domain.voxelSize(), domain.voxelSize()) / (max_vel + epsilon);
 }
