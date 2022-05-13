@@ -710,12 +710,9 @@ void FluidSimulator::project(FluidDomain &domain, float dt) {
     float v_solid = 0;
     float w_solid = 0;
 
-    openvdb::FloatGrid::Ptr u_weights = openvdb::createGrid<openvdb::FloatGrid>(0);
-    openvdb::FloatGrid::Ptr v_weights = openvdb::createGrid<openvdb::FloatGrid>(0);
-    openvdb::FloatGrid::Ptr w_weights = openvdb::createGrid<openvdb::FloatGrid>(0);
-    auto u_weights_accessor = u_weights->getAccessor();
-    auto v_weights_accessor = v_weights->getAccessor();
-    auto w_weights_accessor = w_weights->getAccessor();
+    auto u_weights_accessor = grid.uWeights()->getAccessor();
+    auto v_weights_accessor = grid.vWeights()->getAccessor();
+    auto w_weights_accessor = grid.wWeights()->getAccessor();
 
     auto t_start = std::chrono::high_resolution_clock::now();
     // Resample solid level set to get values at bottom left corner of voxels
@@ -747,97 +744,114 @@ void FluidSimulator::project(FluidDomain &domain, float dt) {
 
 
     t_start = std::chrono::high_resolution_clock::now();
-    for (auto it = _bbox.beginZYX(); it != _bbox.endZYX(); ++it) {
-        auto coord = (*it);
+    tbb::parallel_for(tbb::blocked_range<int>(_bbox.min()[0], _bbox.max()[0]), [&](tbb::blocked_range<int> i_range) {
+        auto fluidAccessor = domain.fluidLevelSet().getAccessor();
+        auto fluid_indices_accessor = fluid_indices->getAccessor();
+        auto u_weights_accessor = grid.uWeights()->getAccessor();
+        auto v_weights_accessor = grid.vWeights()->getAccessor();
+        auto w_weights_accessor = grid.wWeights()->getAccessor();
+        for (int i = i_range.begin(); i < i_range.end(); ++i) {
+            for (int j = _bbox.min()[1]; j < _bbox.max()[1]; ++j) {
+                for (int k = _bbox.min()[0]; k < _bbox.max()[0]; ++k) {
+                    auto coord = openvdb::Coord(i, j, k);
 
-        if (fluid_indices_accessor.getValue(coord) != -1) {
-            int idx = fluid_indices_accessor.getValue(coord);
-            rhs[idx] = 0;
-            double diagonal = 0;
-            double theta = 0;
-            double term;
+                    if (fluid_indices_accessor.getValue(coord) != -1) {
+                        int idx = fluid_indices_accessor.getValue(coord);
+                        rhs[idx] = 0;
+                        double diagonal = 0;
+                        double theta = 0;
+                        double term;
 
-            float phi_i_j_k = fluidAccessor.getValue(coord);
-            float phi_i_minus_1_j_k = fluidAccessor.getValue(coord.offsetBy(-1, 0, 0));
-            float phi_i_j_minus_1_k = fluidAccessor.getValue(coord.offsetBy(0, -1, 0));
-            float phi_i_j_k_minus_1 = fluidAccessor.getValue(coord.offsetBy(0, 0, -1));
-            float phi_i_plus_1_j_k = fluidAccessor.getValue(coord.offsetBy(1, 0, 0));
-            float phi_i_j_plus_1_k = fluidAccessor.getValue(coord.offsetBy(0, 1, 0));
-            float phi_i_j_k_plus_1 = fluidAccessor.getValue(coord.offsetBy(0, 0, 1));
+                        float phi_i_j_k = fluidAccessor.getValue(coord);
+                        float phi_i_minus_1_j_k = fluidAccessor.getValue(coord.offsetBy(-1, 0, 0));
+                        float phi_i_j_minus_1_k = fluidAccessor.getValue(coord.offsetBy(0, -1, 0));
+                        float phi_i_j_k_minus_1 = fluidAccessor.getValue(coord.offsetBy(0, 0, -1));
+                        float phi_i_plus_1_j_k = fluidAccessor.getValue(coord.offsetBy(1, 0, 0));
+                        float phi_i_j_plus_1_k = fluidAccessor.getValue(coord.offsetBy(0, 1, 0));
+                        float phi_i_j_k_plus_1 = fluidAccessor.getValue(coord.offsetBy(0, 0, 1));
 
-            term = u_weights_accessor.getValue(coord) * scale_x;
-            if (phi_i_minus_1_j_k < 0) {
-                alpha_matrix.insert(idx, fluid_indices_accessor.getValue(coord.offsetBy(-1, 0, 0))) = -term;
+                        term = u_weights_accessor.getValue(coord) * scale_x;
+                        if (phi_i_minus_1_j_k < 0) {
+                            alpha_matrix.insert(idx, fluid_indices_accessor.getValue(coord.offsetBy(-1, 0, 0))) = -term;
+                        }
+                        theta = max(0.001, LevelSet::fraction_inside(phi_i_minus_1_j_k, phi_i_j_k));
+                        diagonal += term * (1.f / theta);
+
+                        rhs[idx] += u_weights_accessor.getValue(coord)
+                                        * grid.velHalfIndexed(vel_front_accessor, coord)[0] / domain.voxelSize()
+                                    + (1 - u_weights_accessor.getValue(coord)) * u_solid / domain.voxelSize();
+
+
+                        term = u_weights_accessor.getValue(coord.offsetBy(1, 0, 0)) * scale_x;
+                        if (phi_i_plus_1_j_k < 0) {
+                            alpha_matrix.insert(idx, fluid_indices_accessor.getValue(coord.offsetBy(1, 0, 0))) = -term;
+                        }
+                        theta = max(0.001, LevelSet::fraction_inside(phi_i_j_k, phi_i_plus_1_j_k));
+                        diagonal += term * (1.f / theta);
+
+                        rhs[idx] -=
+                            u_weights_accessor.getValue(coord.offsetBy(1, 0, 0))
+                                * grid.velHalfIndexed(vel_front_accessor, coord.offsetBy(1, 0, 0))[0]
+                                / domain.voxelSize()
+                            + (1 - u_weights_accessor.getValue(coord.offsetBy(1, 0, 0))) * u_solid / domain.voxelSize();
+
+                        term = v_weights_accessor.getValue(coord) * scale_y;
+                        if (phi_i_j_minus_1_k < 0) {
+                            alpha_matrix.insert(idx, fluid_indices_accessor.getValue(coord.offsetBy(0, -1, 0))) = -term;
+                        }
+                        theta = max(0.001, LevelSet::fraction_inside(phi_i_j_minus_1_k, phi_i_j_k));
+                        diagonal += term * (1.f / theta);
+
+                        rhs[idx] += v_weights_accessor.getValue(coord)
+                                        * grid.velHalfIndexed(vel_front_accessor, coord)[1] / domain.voxelSize()
+                                    + (1 - v_weights_accessor.getValue(coord)) * v_solid / domain.voxelSize();
+
+                        term = v_weights_accessor.getValue(coord.offsetBy(0, 1, 0)) * scale_y;
+                        if (phi_i_j_plus_1_k < 0) {
+                            alpha_matrix.insert(idx, fluid_indices_accessor.getValue(coord.offsetBy(0, 1, 0))) = -term;
+                        }
+                        theta = max(0.001, LevelSet::fraction_inside(phi_i_j_k, phi_i_j_plus_1_k));
+                        diagonal += term * (1.f / theta);
+
+                        rhs[idx] -=
+                            v_weights_accessor.getValue(coord.offsetBy(0, 1, 0))
+                                * grid.velHalfIndexed(vel_front_accessor, coord.offsetBy(0, 1, 0))[1]
+                                / domain.voxelSize()
+                            + (1 - v_weights_accessor.getValue(coord.offsetBy(0, 1, 0))) * v_solid / domain.voxelSize();
+
+                        term = w_weights_accessor.getValue(coord) * scale_z;
+                        if (phi_i_j_k_minus_1 < 0) {
+                            alpha_matrix.insert(idx, fluid_indices_accessor.getValue(coord.offsetBy(0, 0, -1))) = -term;
+                        }
+                        theta = max(0.001, LevelSet::fraction_inside(phi_i_j_k_minus_1, phi_i_j_k));
+                        diagonal += term * (1.f / theta);
+
+                        rhs[idx] += w_weights_accessor.getValue(coord)
+                                        * grid.velHalfIndexed(vel_front_accessor, coord)[2] / domain.voxelSize()
+                                    + (1 - w_weights_accessor.getValue(coord)) * w_solid / domain.voxelSize();
+
+
+                        term = w_weights_accessor.getValue(coord.offsetBy(0, 0, 1)) * scale_z;
+                        if (phi_i_j_k_plus_1 < 0) {
+                            alpha_matrix.insert(idx, fluid_indices_accessor.getValue(coord.offsetBy(0, 0, 1))) = -term;
+                        }
+                        theta = max(0.001, LevelSet::fraction_inside(phi_i_j_k, phi_i_j_k_plus_1));
+                        diagonal += term * (1.f / theta);
+
+                        rhs[idx] -=
+                            w_weights_accessor.getValue(coord.offsetBy(0, 0, 1))
+                                * grid.velHalfIndexed(vel_front_accessor, coord.offsetBy(0, 0, 1))[2]
+                                / domain.voxelSize()
+                            + (1 - w_weights_accessor.getValue(coord.offsetBy(0, 0, 1))) * w_solid / domain.voxelSize();
+                        //
+
+                        alpha_matrix.insert(idx, idx) = diagonal;
+                    }
+                    // }
+                }
             }
-            theta = max(0.001, LevelSet::fraction_inside(phi_i_minus_1_j_k, phi_i_j_k));
-            diagonal += term * (1.f / theta);
-
-            rhs[idx] +=
-                u_weights_accessor.getValue(coord) * grid.velHalfIndexed(vel_front_accessor, coord)[0] / domain.voxelSize()
-                + (1 - u_weights_accessor.getValue(coord)) * u_solid / domain.voxelSize();
-
-
-            term = u_weights_accessor.getValue(coord.offsetBy(1, 0, 0)) * scale_x;
-            if (phi_i_plus_1_j_k < 0) {
-                alpha_matrix.insert(idx, fluid_indices_accessor.getValue(coord.offsetBy(1, 0, 0))) = -term;
-            }
-            theta = max(0.001, LevelSet::fraction_inside(phi_i_j_k, phi_i_plus_1_j_k));
-            diagonal += term * (1.f / theta);
-
-            rhs[idx] -= u_weights_accessor.getValue(coord.offsetBy(1, 0, 0))
-                            * grid.velHalfIndexed(vel_front_accessor, coord.offsetBy(1, 0, 0))[0] / domain.voxelSize()
-                        + (1 - u_weights_accessor.getValue(coord.offsetBy(1, 0, 0))) * u_solid / domain.voxelSize();
-
-            term = v_weights_accessor.getValue(coord) * scale_y;
-            if (phi_i_j_minus_1_k < 0) {
-                alpha_matrix.insert(idx, fluid_indices_accessor.getValue(coord.offsetBy(0, -1, 0))) = -term;
-            }
-            theta = max(0.001, LevelSet::fraction_inside(phi_i_j_minus_1_k, phi_i_j_k));
-            diagonal += term * (1.f / theta);
-
-            rhs[idx] +=
-                v_weights_accessor.getValue(coord) * grid.velHalfIndexed(vel_front_accessor, coord)[1] / domain.voxelSize()
-                + (1 - v_weights_accessor.getValue(coord)) * v_solid / domain.voxelSize();
-
-            term = v_weights_accessor.getValue(coord.offsetBy(0, 1, 0)) * scale_y;
-            if (phi_i_j_plus_1_k < 0) {
-                alpha_matrix.insert(idx, fluid_indices_accessor.getValue(coord.offsetBy(0, 1, 0))) = -term;
-            }
-            theta = max(0.001, LevelSet::fraction_inside(phi_i_j_k, phi_i_j_plus_1_k));
-            diagonal += term * (1.f / theta);
-
-            rhs[idx] -= v_weights_accessor.getValue(coord.offsetBy(0, 1, 0))
-                            * grid.velHalfIndexed(vel_front_accessor, coord.offsetBy(0, 1, 0))[1] / domain.voxelSize()
-                        + (1 - v_weights_accessor.getValue(coord.offsetBy(0, 1, 0))) * v_solid / domain.voxelSize();
-
-            term = w_weights_accessor.getValue(coord) * scale_z;
-            if (phi_i_j_k_minus_1 < 0) {
-                alpha_matrix.insert(idx, fluid_indices_accessor.getValue(coord.offsetBy(0, 0, -1))) = -term;
-            }
-            theta = max(0.001, LevelSet::fraction_inside(phi_i_j_k_minus_1, phi_i_j_k));
-            diagonal += term * (1.f / theta);
-
-            rhs[idx] +=
-                w_weights_accessor.getValue(coord) * grid.velHalfIndexed(vel_front_accessor, coord)[2] / domain.voxelSize()
-                + (1 - w_weights_accessor.getValue(coord)) * w_solid / domain.voxelSize();
-
-
-            term = w_weights_accessor.getValue(coord.offsetBy(0, 0, 1)) * scale_z;
-            if (phi_i_j_k_plus_1 < 0) {
-                alpha_matrix.insert(idx, fluid_indices_accessor.getValue(coord.offsetBy(0, 0, 1))) = -term;
-            }
-            theta = max(0.001, LevelSet::fraction_inside(phi_i_j_k, phi_i_j_k_plus_1));
-            diagonal += term * (1.f / theta);
-
-            rhs[idx] -= w_weights_accessor.getValue(coord.offsetBy(0, 0, 1))
-                            * grid.velHalfIndexed(vel_front_accessor, coord.offsetBy(0, 0, 1))[2] / domain.voxelSize()
-                        + (1 - w_weights_accessor.getValue(coord.offsetBy(0, 0, 1))) * w_solid / domain.voxelSize();
-            //
-
-            alpha_matrix.insert(idx, idx) = diagonal;
         }
-        // }
-    }
+    });
     t_end = std::chrono::high_resolution_clock::now();
     auto system_build_duration = std::chrono::duration_cast<std::chrono::milliseconds>(t_end - t_start);
 
