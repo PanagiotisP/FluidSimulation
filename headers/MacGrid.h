@@ -30,7 +30,7 @@
 
 class MacGrid {
 public:
-    MacGrid(int size_x, int size_y, float length_x, float length_y);
+    MacGrid(openvdb::math::Transform::Ptr i2w_transform);
     ~MacGrid();
 
     typedef openvdb::Vec3dGrid::Accessor Accessor;

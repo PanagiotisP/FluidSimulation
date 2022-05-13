@@ -1,5 +1,3 @@
-// 2D Fluid Simulation for now
-// No rectangular bounding box, 4 free surfaces for now
 #include "FluidDomain.h"
 #include "FluidSimulator.h"
 #include "Renderer.h"
@@ -126,7 +124,7 @@ int main(int argc, char **argv) {
                        i2w_transform->indexToWorld(openvdb::Vec3d(nx - 2, ny - 2, nz - 2))),
         *i2w_transform);
     FluidSimulator sim(solidBBox->evalActiveVoxelBoundingBox());
-    FluidDomain fluidDomain(nx, ny, width, width, solidBBox, openvdb::createLevelSet<openvdb::FloatGrid>(voxel_size),
+    FluidDomain fluidDomain(solidBBox, openvdb::createLevelSet<openvdb::FloatGrid>(voxel_size),
                             i2w_transform, voxel_size);
     fluidDomain.fluidLevelSet().getLevelSet()->setTransform(i2w_transform);
     for (auto iter = fluidDomain.solidLevelSet().getLevelSet()->tree().beginRootChildren(); iter; ++iter) {

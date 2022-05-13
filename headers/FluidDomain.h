@@ -24,7 +24,7 @@ private:
 
 class FluidDomain {
 public:
-    FluidDomain(int size_x, int size_y, float length_x, float length_y, openvdb::FloatGrid::Ptr solid_level_set,
+    FluidDomain(openvdb::FloatGrid::Ptr solid_level_set,
                 openvdb::FloatGrid::Ptr fluid_level_set, openvdb::math::Transform::Ptr i2w_transform, float voxel_size);
     ~FluidDomain();
 

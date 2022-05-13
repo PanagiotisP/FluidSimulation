@@ -1,6 +1,6 @@
 #include "MacGrid.h"
 
-MacGrid::MacGrid(int size_x, int size_y, float length_x, float length_y): i2w_transform(i2w_transform) {
+MacGrid::MacGrid(openvdb::math::Transform::Ptr i2w_transform): i2w_transform(i2w_transform) {
     _vel_front = openvdb::createGrid<openvdb::Vec3dGrid>(openvdb::Vec3d(0));
     _vel_back = openvdb::createGrid<openvdb::Vec3dGrid>(openvdb::Vec3d(0));
     _vel_prev = openvdb::createGrid<openvdb::Vec3dGrid>(openvdb::Vec3d(0));
