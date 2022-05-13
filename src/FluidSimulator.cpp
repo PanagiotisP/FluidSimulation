@@ -91,8 +91,8 @@ public:
         auto vel_weight_accessor = vel_weight->getAccessor();
         for (int p = p_range.begin(); p < p_range.end(); ++p) {
             auto &particle = p_set[p];
-            auto start_coord = openvdb::Coord::floor(particle->pos()).offsetBy(-1, -1, -1);
-            auto end_coord = start_coord.offsetBy(4, 4, 4);
+            auto start_coord = openvdb::Coord::round(particle->pos()).offsetBy(-1, -1, -1);
+            auto end_coord = start_coord.offsetBy(3, 3, 3);
             openvdb::CoordBBox bbox(start_coord, end_coord);
 
             for (int i = bbox.min()[0]; i < bbox.max()[0]; ++i) {
@@ -937,13 +937,13 @@ double FluidSimulator::calculate_kernel_function(double x, double y, double z) {
 }
 
 openvdb::Vec3d FluidSimulator::calculate_kernel_function_staggered(openvdb::Vec3d difference) {
-    float val_x_0 = calculate_quad_bspline(difference[0]);
-    float val_y_0 = calculate_quad_bspline(difference[1]);
-    float val_z_0 = calculate_quad_bspline(difference[2]);
+    float val_x_0 = calculate_trilinear_hat(difference[0]);
+    float val_y_0 = calculate_trilinear_hat(difference[1]);
+    float val_z_0 = calculate_trilinear_hat(difference[2]);
 
-    float val_x_1 = calculate_quad_bspline(difference[0] - 0.5);
-    float val_y_1 = calculate_quad_bspline(difference[1] - 0.5);
-    float val_z_1 = calculate_quad_bspline(difference[2] - 0.5);
+    float val_x_1 = calculate_trilinear_hat(difference[0] - 0.5);
+    float val_y_1 = calculate_trilinear_hat(difference[1] - 0.5);
+    float val_z_1 = calculate_trilinear_hat(difference[2] - 0.5);
 
     return openvdb::Vec3d(val_x_0 * val_y_1 * val_z_1, val_x_1 * val_y_0 * val_z_1, val_x_1 * val_y_1 * val_z_0);
 }

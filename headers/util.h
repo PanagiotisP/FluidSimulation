@@ -459,6 +459,16 @@ T calculate_quad_bspline(T x) {
         return 0;
 }
 
+template <class T>
+T calculate_trilinear_hat(T x) {
+    if (-1. <= x && x <= 0.) {
+        return 1 + x;
+    } else if (0. <= x && x <= 1.)
+        return 1 - x;
+    else
+        return 0;
+}
+
 template <typename T>
 int sgn(T val) {
     return (T(0) < val) - (val < T(0));
