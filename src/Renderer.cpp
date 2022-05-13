@@ -96,8 +96,8 @@ void Renderer::draw(FluidDomain &fluidDomain, sf::RenderWindow &window) {
             // if (2 < (*it).p[0] && (*it).p[0] < 3) {
             sf::CircleShape particle(2); // grid_width_x / 2 / sim_size_x);
             particle.setFillColor(sf::Color::Blue);
-            particle.setPosition(offset.x + (*it).p[2] * grid_width_x / sim_size_x,
-                                 offset.y + grid_width_y - (*it).p[1] * grid_width_y / sim_size_y);
+            particle.setPosition(offset.x + it->pos()[2] * grid_width_x / sim_size_x,
+                                 offset.y + grid_width_y - it->pos()[1] * grid_width_y / sim_size_y);
             window.draw(particle);
             // }
         }
