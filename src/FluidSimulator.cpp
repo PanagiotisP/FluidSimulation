@@ -366,22 +366,23 @@ void FluidSimulator::reseeding(FluidDomain &domain) {
 
 void FluidSimulator::extrapolate_data(FluidDomain &domain, int iterations_n) {
     auto &grid = domain.grid();
-    openvdb::BoolGrid::Ptr valid_mask_x_front_buffer = openvdb::createGrid<openvdb::BoolGrid>(false);
-    openvdb::BoolGrid::Ptr valid_mask_x_back_buffer = openvdb::createGrid<openvdb::BoolGrid>(false);
-    openvdb::BoolGrid::Ptr valid_mask_y_front_buffer = openvdb::createGrid<openvdb::BoolGrid>(false);
-    openvdb::BoolGrid::Ptr valid_mask_y_back_buffer = openvdb::createGrid<openvdb::BoolGrid>(false);
-    openvdb::BoolGrid::Ptr valid_mask_z_front_buffer = openvdb::createGrid<openvdb::BoolGrid>(false);
-    openvdb::BoolGrid::Ptr valid_mask_z_back_buffer = openvdb::createGrid<openvdb::BoolGrid>(false);
-    auto valid_mask_x_front_buffer_accessor = valid_mask_x_front_buffer->getAccessor();
-    auto valid_mask_x_back_buffer_accessor = valid_mask_x_back_buffer->getAccessor();
-    auto valid_mask_y_front_buffer_accessor = valid_mask_y_front_buffer->getAccessor();
-    auto valid_mask_y_back_buffer_accessor = valid_mask_y_back_buffer->getAccessor();
-    auto valid_mask_z_front_buffer_accessor = valid_mask_z_front_buffer->getAccessor();
-    auto valid_mask_z_back_buffer_accessor = valid_mask_z_back_buffer->getAccessor();
-
     auto fluidAccessor = domain.fluidLevelSet().getAccessor();
-    auto vel_front_accessor = domain.grid().velFront()->getAccessor();
-    auto vel_back_accessor = domain.grid().velBack()->getAccessor();
+
+    for (int iter = 0; iter < iterations_n; ++iter) {
+        // Resetting accessors due to the swap happening at the end of this iteration
+        grid.setVelBack(grid.velFront()->deepCopy());
+        grid.setValidUBack(grid.validUFront()->deepCopy());
+        grid.setValidVBack(grid.validVFront()->deepCopy());
+        grid.setValidWBack(grid.validWFront()->deepCopy());
+        auto vel_front_accessor = domain.grid().velFront()->getAccessor();
+        auto vel_back_accessor = domain.grid().velBack()->getAccessor();
+        auto valid_mask_u_front_buffer_accessor = grid.validUFront()->getAccessor();
+        auto valid_mask_u_back_buffer_accessor = grid.validUBack()->getAccessor();
+        auto valid_mask_v_front_buffer_accessor = grid.validVFront()->getAccessor();
+        auto valid_mask_v_back_buffer_accessor = grid.validVBack()->getAccessor();
+        auto valid_mask_w_front_buffer_accessor = grid.validWFront()->getAccessor();
+        auto valid_mask_w_back_buffer_accessor = grid.validWBack()->getAccessor();
+        auto solidAccessor = domain.solidLevelSet().getAccessor();
 
     grid.velBack()->clear();
 
@@ -391,175 +392,127 @@ void FluidSimulator::extrapolate_data(FluidDomain &domain, int iterations_n) {
         auto coord = (*it);
         auto prev_vel = grid.velHalfIndexed(vel_front_accessor, coord);
 
-        if (fluidAccessor.getValue(coord) < 0 || fluidAccessor.getValue(coord.offsetBy(-1, 0, 0)) < 0) {
-            valid_mask_x_front_buffer_accessor.setValue(coord, true);
-            valid_mask_x_back_buffer_accessor.setValue(coord, true);
-            grid.setVelXHalfIndexed(vel_back_accessor, coord, prev_vel[0]);
-        } else {
-            valid_mask_x_front_buffer_accessor.setValue(coord, false);
-            valid_mask_x_back_buffer_accessor.setValue(coord, false);
-            grid.setVelXHalfIndexed(vel_back_accessor, coord, 0);
-            grid.setVelXHalfIndexed(vel_front_accessor, coord, 0);
-        }
-        if (fluidAccessor.getValue(coord) < 0 || fluidAccessor.getValue(coord.offsetBy(0, -1, 0)) < 0) {
-            valid_mask_y_front_buffer_accessor.setValue(coord, true);
-            valid_mask_y_back_buffer_accessor.setValue(coord, true);
-            grid.setVelYHalfIndexed(vel_back_accessor, coord, prev_vel[1]);
-        } else {
-            valid_mask_y_front_buffer_accessor.setValue(coord, false);
-            valid_mask_y_back_buffer_accessor.setValue(coord, false);
-            grid.setVelYHalfIndexed(vel_back_accessor, coord, 0);
-            grid.setVelYHalfIndexed(vel_front_accessor, coord, 0);
-        }
-        if (fluidAccessor.getValue(coord) < 0 || fluidAccessor.getValue(coord.offsetBy(0, 0, -1)) < 0) {
-            valid_mask_z_front_buffer_accessor.setValue(coord, true);
-            valid_mask_z_back_buffer_accessor.setValue(coord, true);
-            grid.setVelZHalfIndexed(vel_back_accessor, coord, prev_vel[2]);
-        } else {
-            valid_mask_z_front_buffer_accessor.setValue(coord, false);
-            valid_mask_z_back_buffer_accessor.setValue(coord, false);
-            grid.setVelZHalfIndexed(vel_back_accessor, coord, 0);
-            grid.setVelZHalfIndexed(vel_front_accessor, coord, 0);
-        }
-    }
 
-    for (int iter = 0; iter < iterations_n; ++iter) {
-        // Resetting accessors due to the swap happening at the end of this iteration
-        valid_mask_x_front_buffer_accessor = valid_mask_x_front_buffer->getAccessor();
-        valid_mask_x_back_buffer_accessor = valid_mask_x_back_buffer->getAccessor();
-        valid_mask_y_front_buffer_accessor = valid_mask_y_front_buffer->getAccessor();
-        valid_mask_y_back_buffer_accessor = valid_mask_y_back_buffer->getAccessor();
-        valid_mask_z_front_buffer_accessor = valid_mask_z_front_buffer->getAccessor();
-        valid_mask_z_back_buffer_accessor = valid_mask_z_back_buffer->getAccessor();
-        auto solidAccessor = domain.solidLevelSet().getAccessor();
         for (auto it = _bbox.beginZYX(); it != _bbox.endZYX(); ++it) {
             auto coord = (*it);
 
             // Check if this cell will be updated in the x dimension
-            if (valid_mask_x_front_buffer_accessor.getValue(coord) == false && solidAccessor.getValue(coord) > 0
-                && solidAccessor.getValue(coord.offsetBy(-1, 0, 0)) > 0) {
+            if (!valid_mask_u_front_buffer_accessor.isValueOn(coord)) {
                 float new_vel_x = 0;
                 int n_valid_neighbors_x = 0;
 
                 // Get values of all valid neighbors
-                if (valid_mask_x_front_buffer_accessor.getValue(coord.offsetBy(-1, 0, 0)) == true) {
-                    new_vel_x += grid.velHalfIndexed(vel_back_accessor, coord.offsetBy(-1, 0, 0))[0];
+                if (valid_mask_u_front_buffer_accessor.isValueOn(coord.offsetBy(-1, 0, 0))) {
+                    new_vel_x += grid.velHalfIndexed(vel_front_accessor, coord.offsetBy(-1, 0, 0))[0];
                     n_valid_neighbors_x++;
                 }
-                if (valid_mask_x_front_buffer_accessor.getValue(coord.offsetBy(0, -1, 0)) == true) {
-                    new_vel_x += grid.velHalfIndexed(vel_back_accessor, coord.offsetBy(0, -1, 0))[0];
+                if (valid_mask_u_front_buffer_accessor.isValueOn(coord.offsetBy(0, -1, 0))) {
+                    new_vel_x += grid.velHalfIndexed(vel_front_accessor, coord.offsetBy(0, -1, 0))[0];
                     n_valid_neighbors_x++;
                 }
-                if (valid_mask_x_front_buffer_accessor.getValue(coord.offsetBy(0, 0, -1)) == true) {
-                    new_vel_x += grid.velHalfIndexed(vel_back_accessor, coord.offsetBy(0, 0, -1))[0];
+                if (valid_mask_u_front_buffer_accessor.isValueOn(coord.offsetBy(0, 0, -1))) {
+                    new_vel_x += grid.velHalfIndexed(vel_front_accessor, coord.offsetBy(0, 0, -1))[0];
                     n_valid_neighbors_x++;
                 }
-                if (valid_mask_x_front_buffer_accessor.getValue(coord.offsetBy(1, 0, 0)) == true) {
-                    new_vel_x += grid.velHalfIndexed(vel_back_accessor, coord.offsetBy(1, 0, 0))[0];
+                if (valid_mask_u_front_buffer_accessor.isValueOn(coord.offsetBy(1, 0, 0))) {
+                    new_vel_x += grid.velHalfIndexed(vel_front_accessor, coord.offsetBy(1, 0, 0))[0];
                     n_valid_neighbors_x++;
                 }
-                if (valid_mask_x_front_buffer_accessor.getValue(coord.offsetBy(0, 1, 0)) == true) {
-                    new_vel_x += grid.velHalfIndexed(vel_back_accessor, coord.offsetBy(0, 1, 0))[0];
+                if (valid_mask_u_front_buffer_accessor.isValueOn(coord.offsetBy(0, 1, 0))) {
+                    new_vel_x += grid.velHalfIndexed(vel_front_accessor, coord.offsetBy(0, 1, 0))[0];
                     n_valid_neighbors_x++;
                 }
-                if (valid_mask_x_front_buffer_accessor.getValue(coord.offsetBy(0, 0, 1)) == true) {
-                    new_vel_x += grid.velHalfIndexed(vel_back_accessor, coord.offsetBy(0, 0, 1))[0];
+                if (valid_mask_u_front_buffer_accessor.isValueOn(coord.offsetBy(0, 0, 1))) {
+                    new_vel_x += grid.velHalfIndexed(vel_front_accessor, coord.offsetBy(0, 0, 1))[0];
                     n_valid_neighbors_x++;
                 }
 
                 // Average the value for the current cell
                 if (n_valid_neighbors_x > 0) {
-                    new_vel_x /= n_valid_neighbors_x;
-                    grid.setVelXHalfIndexed(vel_back_accessor, coord, new_vel_x);
-                    valid_mask_x_back_buffer_accessor.setValue(coord, true);
+                    grid.setVelXHalfIndexed(vel_back_accessor, coord, new_vel_x / n_valid_neighbors_x);
+                    valid_mask_u_back_buffer_accessor.setValueOn(coord);
                 }
             }
 
             // Check if this cell will be updated in the y dimension
-            if (valid_mask_y_front_buffer_accessor.getValue(coord) == false && solidAccessor.getValue(coord) > 0
-                && solidAccessor.getValue(coord.offsetBy(0, -1, 0)) > 0) {
+            if (!valid_mask_v_front_buffer_accessor.isValueOn(coord)) {
                 float new_vel_y = 0;
                 int n_valid_neighbors_y = 0;
 
                 // Get values of all valid neighbors
-                if (valid_mask_y_front_buffer_accessor.getValue(coord.offsetBy(-1, 0, 0)) == true) {
-                    new_vel_y += grid.velHalfIndexed(vel_back_accessor, coord.offsetBy(-1, 0, 0))[1];
+                if (valid_mask_v_front_buffer_accessor.isValueOn(coord.offsetBy(-1, 0, 0))) {
+                    new_vel_y += grid.velHalfIndexed(vel_front_accessor, coord.offsetBy(-1, 0, 0))[1];
                     n_valid_neighbors_y++;
                 }
-                if (valid_mask_y_front_buffer_accessor.getValue(coord.offsetBy(0, -1, 0)) == true) {
-                    new_vel_y += grid.velHalfIndexed(vel_back_accessor, coord.offsetBy(0, -1, 0))[1];
+                if (valid_mask_v_front_buffer_accessor.isValueOn(coord.offsetBy(0, -1, 0))) {
+                    new_vel_y += grid.velHalfIndexed(vel_front_accessor, coord.offsetBy(0, -1, 0))[1];
                     n_valid_neighbors_y++;
                 }
-                if (valid_mask_y_front_buffer_accessor.getValue(coord.offsetBy(0, 0, -1)) == true) {
-                    new_vel_y += grid.velHalfIndexed(vel_back_accessor, coord.offsetBy(0, 0, -1))[1];
+                if (valid_mask_v_front_buffer_accessor.isValueOn(coord.offsetBy(0, 0, -1))) {
+                    new_vel_y += grid.velHalfIndexed(vel_front_accessor, coord.offsetBy(0, 0, -1))[1];
                     n_valid_neighbors_y++;
                 }
-                if (valid_mask_y_front_buffer_accessor.getValue(coord.offsetBy(1, 0, 0)) == true) {
-                    new_vel_y += grid.velHalfIndexed(vel_back_accessor, coord.offsetBy(1, 0, 0))[1];
+                if (valid_mask_v_front_buffer_accessor.isValueOn(coord.offsetBy(1, 0, 0))) {
+                    new_vel_y += grid.velHalfIndexed(vel_front_accessor, coord.offsetBy(1, 0, 0))[1];
                     n_valid_neighbors_y++;
                 }
-                if (valid_mask_y_front_buffer_accessor.getValue(coord.offsetBy(0, 1, 0)) == true) {
-                    new_vel_y += grid.velHalfIndexed(vel_back_accessor, coord.offsetBy(0, 1, 0))[1];
+                if (valid_mask_v_front_buffer_accessor.isValueOn(coord.offsetBy(0, 1, 0))) {
+                    new_vel_y += grid.velHalfIndexed(vel_front_accessor, coord.offsetBy(0, 1, 0))[1];
                     n_valid_neighbors_y++;
                 }
-                if (valid_mask_y_front_buffer_accessor.getValue(coord.offsetBy(0, 0, 1)) == true) {
-                    new_vel_y += grid.velHalfIndexed(vel_back_accessor, coord.offsetBy(0, 0, 1))[1];
+                if (valid_mask_v_front_buffer_accessor.isValueOn(coord.offsetBy(0, 0, 1))) {
+                    new_vel_y += grid.velHalfIndexed(vel_front_accessor, coord.offsetBy(0, 0, 1))[1];
                     n_valid_neighbors_y++;
                 }
 
                 // Average the value for the current cell
                 if (n_valid_neighbors_y > 0) {
-                    new_vel_y /= n_valid_neighbors_y;
-                    grid.setVelYHalfIndexed(vel_back_accessor, coord, new_vel_y);
-                    valid_mask_y_back_buffer_accessor.setValue(coord, true);
+                    grid.setVelYHalfIndexed(vel_back_accessor, coord, new_vel_y / n_valid_neighbors_y);
+                    valid_mask_v_back_buffer_accessor.setValueOn(coord);
                 }
             }
 
-            if (valid_mask_z_front_buffer_accessor.getValue(coord) == false && solidAccessor.getValue(coord) > 0
-                && solidAccessor.getValue(coord.offsetBy(0, 0, -1)) > 0) {
+            if (!valid_mask_w_front_buffer_accessor.isValueOn(coord)) {
                 float new_vel_z = 0;
                 int n_valid_neighbors_z = 0;
 
                 // Get values of all valid neighbors
-                if (valid_mask_z_front_buffer_accessor.getValue(coord.offsetBy(-1, 0, 0)) == true) {
-                    new_vel_z += grid.velHalfIndexed(vel_back_accessor, coord.offsetBy(-1, 0, 0))[2];
+                if (valid_mask_w_front_buffer_accessor.isValueOn(coord.offsetBy(-1, 0, 0))) {
+                    new_vel_z += grid.velHalfIndexed(vel_front_accessor, coord.offsetBy(-1, 0, 0))[2];
                     n_valid_neighbors_z++;
                 }
-                if (valid_mask_z_front_buffer_accessor.getValue(coord.offsetBy(0, -1, 0)) == true) {
-                    new_vel_z += grid.velHalfIndexed(vel_back_accessor, coord.offsetBy(0, -1, 0))[2];
+                if (valid_mask_w_front_buffer_accessor.isValueOn(coord.offsetBy(0, -1, 0))) {
+                    new_vel_z += grid.velHalfIndexed(vel_front_accessor, coord.offsetBy(0, -1, 0))[2];
                     n_valid_neighbors_z++;
                 }
-                if (valid_mask_z_front_buffer_accessor.getValue(coord.offsetBy(0, 0, -1)) == true) {
-                    new_vel_z += grid.velHalfIndexed(vel_back_accessor, coord.offsetBy(0, 0, -1))[2];
+                if (valid_mask_w_front_buffer_accessor.isValueOn(coord.offsetBy(0, 0, -1))) {
+                    new_vel_z += grid.velHalfIndexed(vel_front_accessor, coord.offsetBy(0, 0, -1))[2];
                     n_valid_neighbors_z++;
                 }
-                if (valid_mask_z_front_buffer_accessor.getValue(coord.offsetBy(1, 0, 0)) == true) {
-                    new_vel_z += grid.velHalfIndexed(vel_back_accessor, coord.offsetBy(1, 0, 0))[2];
+                if (valid_mask_w_front_buffer_accessor.isValueOn(coord.offsetBy(1, 0, 0))) {
+                    new_vel_z += grid.velHalfIndexed(vel_front_accessor, coord.offsetBy(1, 0, 0))[2];
                     n_valid_neighbors_z++;
                 }
-                if (valid_mask_z_front_buffer_accessor.getValue(coord.offsetBy(0, 1, 0)) == true) {
-                    new_vel_z += grid.velHalfIndexed(vel_back_accessor, coord.offsetBy(0, 1, 0))[2];
+                if (valid_mask_w_front_buffer_accessor.isValueOn(coord.offsetBy(0, 1, 0))) {
+                    new_vel_z += grid.velHalfIndexed(vel_front_accessor, coord.offsetBy(0, 1, 0))[2];
                     n_valid_neighbors_z++;
                 }
-                if (valid_mask_z_front_buffer_accessor.getValue(coord.offsetBy(0, 0, 1)) == true) {
-                    new_vel_z += grid.velHalfIndexed(vel_back_accessor, coord.offsetBy(0, 0, 1))[2];
+                if (valid_mask_w_front_buffer_accessor.isValueOn(coord.offsetBy(0, 0, 1))) {
+                    new_vel_z += grid.velHalfIndexed(vel_front_accessor, coord.offsetBy(0, 0, 1))[2];
                     n_valid_neighbors_z++;
                 }
 
                 // Average the value for the current cell
                 if (n_valid_neighbors_z > 0) {
-                    new_vel_z /= n_valid_neighbors_z;
-                    grid.setVelZHalfIndexed(vel_back_accessor, coord, new_vel_z);
-                    valid_mask_z_back_buffer_accessor.setValue(coord, true);
+                    grid.setVelZHalfIndexed(vel_back_accessor, coord, new_vel_z / n_valid_neighbors_z);
+                    valid_mask_w_back_buffer_accessor.setValueOn(coord);
                 }
             }
         }
         // Swap valid mask
-        valid_mask_x_front_buffer.swap(valid_mask_x_back_buffer);
-        valid_mask_y_front_buffer.swap(valid_mask_y_back_buffer);
-        valid_mask_z_front_buffer.swap(valid_mask_z_back_buffer);
+        grid.swapValidMasks();
+        grid.swapVelocityBuffers();
     }
-    grid.swapVelocityBuffers();
 }
 
 void FluidSimulator::advance_flip_pic(FluidDomain &domain, float t_frame, float flip_pic_ratio = 0.98) {
