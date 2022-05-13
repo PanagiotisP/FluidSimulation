@@ -853,6 +853,18 @@ void FluidSimulator::project(FluidDomain &domain, float dt) {
     // std::cout << std::endl;
 
     t_start = std::chrono::high_resolution_clock::now();
+
+    domain.grid().validUFront()->clear();
+    domain.grid().validVFront()->clear();
+    domain.grid().validWFront()->clear();
+
+    auto u_valid_acc = domain.grid().validUFront()->getAccessor();
+    auto v_valid_acc = domain.grid().validVFront()->getAccessor();
+    auto w_valid_acc = domain.grid().validWFront()->getAccessor();
+
+    grid.velBack()->clear();
+    vel_back_accessor = grid.velBack()->getAccessor();
+
     for (auto it = _bbox.beginZYX(); it != _bbox.endZYX(); ++it) {
         auto coord = (*it);
         int idx = fluid_indices_accessor.getValue(coord);
@@ -869,14 +881,16 @@ void FluidSimulator::project(FluidDomain &domain, float dt) {
         float phi_i_j_minus_1_k = fluidAccessor.getValue(coord.offsetBy(0, -1, 0));
         float phi_i_j_k_minus_1 = fluidAccessor.getValue(coord.offsetBy(0, 0, -1));
 
+        auto prevVel = grid.velHalfIndexed(vel_front_accessor, coord);
+        auto newVel = grid.velHalfIndexed(vel_back_accessor, coord);
+
         if (u_weights_accessor.getValue(coord) > 0 && (phi_i_j_k < 0 || phi_i_minus_1_j_k < 0)) {
             float theta = 1;
             if (solidAccessor.getValue(coord) <= 0 || solidAccessor.getValue(coord.offsetBy(-1, 0, 0)) <= 0) {
                 theta = max(0.001, LevelSet::fraction_inside(phi_i_j_k, phi_i_minus_1_j_k));
             }
-            float new_vel_x = grid.velHalfIndexed(vel_front_accessor, coord)[0]
-                              - dt / FluidDomain::density * (p - p_i_minus1) / domain.voxelSize() / theta;
-            grid.setVelXHalfIndexed(vel_back_accessor, coord, new_vel_x);
+            newVel[0] = prevVel[0] - dt / FluidDomain::density * (p - p_i_minus1) / domain.voxelSize() / theta;
+            u_valid_acc.setValueOn(coord);
         }
 
         if (v_weights_accessor.getValue(coord) > 0 && (phi_i_j_k < 0 || phi_i_j_minus_1_k < 0)) {
@@ -884,9 +898,8 @@ void FluidSimulator::project(FluidDomain &domain, float dt) {
             if (solidAccessor.getValue(coord) <= 0 || solidAccessor.getValue(coord.offsetBy(0, -1, 0)) <= 0) {
                 theta = max(0.001, LevelSet::fraction_inside(phi_i_j_k, phi_i_j_minus_1_k));
             }
-            float new_vel_y = grid.velHalfIndexed(vel_front_accessor, coord)[1]
-                              - dt / FluidDomain::density * (p - p_j_minus1) / domain.voxelSize() / theta;
-            grid.setVelYHalfIndexed(vel_back_accessor, coord, new_vel_y);
+            newVel[1] = prevVel[1] - dt / FluidDomain::density * (p - p_j_minus1) / domain.voxelSize() / theta;
+            v_valid_acc.setValueOn(coord);
         }
 
         if (w_weights_accessor.getValue(coord) > 0 && (phi_i_j_k < 0 || phi_i_j_k_minus_1 < 0)) {
@@ -894,10 +907,10 @@ void FluidSimulator::project(FluidDomain &domain, float dt) {
             if (solidAccessor.getValue(coord) <= 0 || solidAccessor.getValue(coord.offsetBy(0, 0, -1)) <= 0) {
                 theta = max(0.001, LevelSet::fraction_inside(phi_i_j_k, phi_i_j_k_minus_1));
             }
-            float new_vel_z = grid.velHalfIndexed(vel_front_accessor, coord)[2]
-                              - dt / FluidDomain::density * (p - p_k_minus1) / domain.voxelSize() / theta;
-            grid.setVelZHalfIndexed(vel_back_accessor, coord, new_vel_z);
+            newVel[2] = prevVel[2] - dt / FluidDomain::density * (p - p_k_minus1) / domain.voxelSize() / theta;
+            w_valid_acc.setValueOn(coord);
         }
+        grid.setVelHalfIndexed(vel_back_accessor, coord, newVel);
     }
     t_end = std::chrono::high_resolution_clock::now();
     auto update_duration = std::chrono::duration_cast<std::chrono::milliseconds>(t_end - t_start);
