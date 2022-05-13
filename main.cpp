@@ -53,7 +53,7 @@ enum class InitialisationType { CenterSmoke, VortexSmoke, CollidingSmoke, WaterF
 
 void pic_initialisation(FluidDomain &domain, InitialisationType type, openvdb::math::Transform::Ptr i2w_transform) {
     MacGrid &grid = domain.grid();
-    openvdb::Vec3f center_point(grid.sizeY() / 2, grid.sizeX() / 2, grid.sizeY() / 2);
+    openvdb::Vec3f center_point(nx / 2, ny / 2, nz / 2);
 
     float velocity;
     float concentration;
@@ -108,12 +108,13 @@ void pic_initialisation(FluidDomain &domain, InitialisationType type, openvdb::m
 
 int main(int argc, char **argv) {
     std::cout.precision(2);
+    openvdb::initialize();
     // Create a VDB file object.
     openvdb::io::File file("mygrid.vdb");
     // Add the grid pointer to a container.
     openvdb::GridPtrVec grids;
 
-    int frame = 0;
+    int frame = 1;
     double voxel_size = width / ny;
     auto i2w_transform = openvdb::math::Transform::createLinearTransform(voxel_size);
 
@@ -151,7 +152,9 @@ int main(int argc, char **argv) {
     if (!std::filesystem::exists(vdb_folder)) std::filesystem::create_directory(vdb_folder);
 
     sf::RenderWindow window = sf::RenderWindow(sf::VideoMode(WINDOW_SIZE, WINDOW_SIZE), "SFML works!");
-    while (window.isOpen() && frame < max_frames_n) {
+    auto t_start = std::chrono::high_resolution_clock::now();
+    auto t_end = t_start;
+    while (window.isOpen() && frame <= max_frames_n) {
         sf::Event event;
         while (window.pollEvent(event)) {
             if (event.type == sf::Event::Closed) window.close();
@@ -166,16 +169,20 @@ int main(int argc, char **argv) {
             // isConcentrationSrcsActive = !isConcentrationSrcsActive;
             fluidDomain.removeFluidSource(0);
         }
-        if (frame % 2000 == 1) {
+        if (frame % 2000 == 2) {
             fluidDomain.removeFluidSource(0);
             fluidDomain.removeFluidSource(0);
         }
 
+        auto t_frame_start = std::chrono::high_resolution_clock::now();
 #if defined EULER_GRID
 #elif defined PIC_FLIP
         sim.advance_flip_pic(fluidDomain, t_frame, 0.95);
 #endif
-
+        t_end = std::chrono::high_resolution_clock::now();
+        printf("Frame %d. Last frame time %.3f. Average time per frame %.3f\n", frame,
+               std::chrono::duration_cast<std::chrono::milliseconds>(t_end - t_frame_start).count() / 1000.0,
+               std::chrono::duration_cast<std::chrono::milliseconds>(t_end - t_start).count() / 1000.0 / frame);
         grids.push_back(fluidDomain.fluidLevelSet().getLevelSet()->deepCopy());
         std::string filename = "sequence_" + std::to_string(frame) + ".vdb";
         openvdb::io::File((vdb_folder / std::filesystem::path(filename)).string())
