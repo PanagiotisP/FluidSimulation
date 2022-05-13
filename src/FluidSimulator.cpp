@@ -552,8 +552,15 @@ void FluidSimulator::advance_flip_pic(FluidDomain &domain, float t_frame, float 
         t_end = std::chrono::high_resolution_clock::now();
         auto transfer_from_particles_to_grid_duration =
             std::chrono::duration_cast<std::chrono::milliseconds>(t_end - t_start);
-        domain.grid().updatePreviousVelocityBuffer();
         print_velocity_field(domain.grid(), "after transfer");
+
+        t_start = std::chrono::high_resolution_clock::now();
+        extrapolate_data(domain, 2);
+        t_end = std::chrono::high_resolution_clock::now();
+        auto extrapolate_data_duration = std::chrono::duration_cast<std::chrono::milliseconds>(t_end - t_start);
+        print_velocity_field(domain.grid(), "after extrapolation");
+
+        domain.grid().updatePreviousVelocityBuffer();
 
         // Eulerian grid part START
 
@@ -562,10 +569,6 @@ void FluidSimulator::advance_flip_pic(FluidDomain &domain, float t_frame, float 
         t_end = std::chrono::high_resolution_clock::now();
         auto add_forces_duration = std::chrono::duration_cast<std::chrono::milliseconds>(t_end - t_start);
         print_velocity_field(domain.grid(), "after forces");
-        enforceDirichlet(domain);
-        print_velocity_field(domain.grid(), "after dirichlet");
-        extrapolate_data(domain, 1);
-        print_velocity_field(domain.grid(), "after extrapolation");
 
         t_start = std::chrono::high_resolution_clock::now();
         project(domain, timestep);
