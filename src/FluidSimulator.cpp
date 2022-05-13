@@ -160,14 +160,14 @@ public:
                 auto &p = domain.particleSet()[*p_it];
                 test_counter++;
 
-                if (cell_bbox.isInside(p->pos())) {
+                if (cell_bbox.isInside(p.pos())) {
                     particles_inside.push_back(*p_it);
                     p_counter++;
                     // Initialise bbox
                     if (particles_bbox.max() < particles_bbox.min()) {
-                        particles_bbox = openvdb::BBoxd(p->pos(), p->pos());
+                        particles_bbox = openvdb::BBoxd(p.pos(), p.pos());
                     } else {
-                        particles_bbox.expand(p->pos());
+                        particles_bbox.expand(p.pos());
                     }
                 }
             }
@@ -176,7 +176,7 @@ public:
                      ++it) {
                     auto particles_bbox_min = particles_bbox.min();
                     auto particles_bbox_max = particles_bbox.max();
-                    auto particle_pos = domain.particleSet()[*it]->pos();
+                    auto particle_pos = domain.particleSet()[*it].pos();
                     if (particles_bbox_min[0] < particle_pos[0] && particles_bbox_min[1] < particle_pos[1]
                         && particles_bbox_min[2] < particle_pos[2] && particle_pos[0] < particles_bbox_max[0]
                         && particle_pos[1] < particles_bbox_max[1] && particle_pos[2] < particles_bbox_max[2]) {
@@ -349,8 +349,7 @@ void FluidSimulator::reseeding(FluidDomain &domain) {
         domain.particleSet().removeParticle(domain.particleSet().begin() + *it);
     }
     for (auto it = f.particles_to_be_added.begin(); it != f.particles_to_be_added.end(); ++it) {
-        auto p = std::make_unique<Particle>(*it);
-        domain.particleSet().addParticle(p);
+        domain.particleSet().addParticle(*it);
     }
     domain.particleSet().setRadius(temp_radius);
 }

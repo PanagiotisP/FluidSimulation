@@ -13,10 +13,10 @@ ParticleSet::ParticleSet() {};
 ParticleSet::ParticleSet(openvdb::math::Transform::Ptr i2w_transform): i2w_transform(i2w_transform) {};
 ParticleSet::~ParticleSet() {};
 
-void ParticleSet::addParticle(std::unique_ptr<Particle> &p) { particles.push_back(std::move(p)); }
+void ParticleSet::addParticle(const Particle &p) { particles.push_back(p); }
 void ParticleSet::removeParticle(ParticleSet::iterator p) { particles.erase(p); }
 void ParticleSet::advect(float dt) {
-    for (auto it = particles.begin(); it != particles.end(); ++it) (*it)->advect(dt, i2w_transform);
+    for (auto it = particles.begin(); it != particles.end(); ++it) it->advect(dt, i2w_transform);
 }
 
 void ParticleSet::advectAndEnsureOutsideObstacles(LevelSet &solid_level_set, openvdb::Vec3fGrid::Ptr cpt_grid,
@@ -30,10 +30,9 @@ void ParticleSet::advectAndEnsureOutsideObstacles(LevelSet &solid_level_set, ope
 
     tbb::parallel_for(tbb::blocked_range<int>(0, particles.size()), [&](tbb::blocked_range<int> &range) {
         for (int i = range.begin(); i < range.end(); ++i) {
-            particles[i]->advect(dt, i2w_transform);
-            if (sampler.isSample(particles[i]->pos()) < 0) {
-                particles[i]->setPosition(
-                    i2w_transform->worldToIndex(openvdb::Vec3d(cpt_sampler.isSample(particles[i]->pos()))));
+            particles[i].advect(dt, i2w_transform);
+            if (sampler.isSample(particles[i].pos()) < 0) {
+                particles[i].setPosition(i2w_transform->worldToIndex(openvdb::Vec3d(cpt_sampler.isSample(particles[i].pos()))));
             }
         }
     });

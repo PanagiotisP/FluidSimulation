@@ -28,9 +28,7 @@ public:
     }
 
 private:
-    // Probably need to control the spawning time of the particle with a time_spawned variable
-    openvdb::Vec3d _pos;
-    openvdb::Vec3d _vel;
+    openvdb::Vec3d _pos, _vel;
 };
 class ParticleSet {
 public:
@@ -40,8 +38,8 @@ public:
     using PosType = openvdb::Vec3R;
     using ScalarType = typename PosType::value_type;
 
-    typedef std::vector<std::unique_ptr<Particle>>::iterator iterator;
-    void addParticle(std::unique_ptr<Particle> &p);
+    typedef std::vector<Particle>::iterator iterator;
+    void addParticle(const Particle &p);
     inline void pop_back() { particles.pop_back(); };
     void removeParticle(ParticleSet::iterator p);
     void advect(float dt);
@@ -52,12 +50,12 @@ public:
 
     inline int size() const { return particles.size(); };
 
-    inline std::unique_ptr<Particle> &operator[](std::size_t index) { return particles[index]; };
+    inline Particle &operator[](std::size_t index) { return particles[index]; };
 
     // Get the world-space position of the nth particle.
     // Required by rasterizeSpheres().
     inline void getPos(size_t n, openvdb::Vec3R &xyz) const {
-        xyz = i2w_transform->indexToWorld(particles[n]->pos());
+        xyz = i2w_transform->indexToWorld(particles[n].pos());
     };
 
     inline void getRadius(size_t n, ScalarType &radius) const {
@@ -94,6 +92,6 @@ public:
     openvdb::math::Transform::Ptr i2w_transform;
 
 private:
-    std::vector<std::unique_ptr<Particle>> particles;
+    std::vector<Particle> particles;
     float radius;
 };

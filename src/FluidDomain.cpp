@@ -39,7 +39,7 @@ void FluidSource::update(MacGrid &grid, ParticleSet &particle_set, float dt) {
                 openvdb::Vec3d new_pos = cellCenterCoord.asVec3d() + openvdb::Vec3d(dis(gen), dis(gen), dis(gen));
                 if (spawning_region.valueInterpolatedI(sampler, new_pos) < 0) {
                     openvdb::Vec3d new_vel = grid.velInterpolatedI(vel_sampler, new_pos) + _vel;
-                    auto p = std::make_unique<Particle>(new_pos, new_vel);
+                    Particle p(new_pos, new_vel);
                     particle_set.addParticle(p);
                     grid_particles--;
                 }
