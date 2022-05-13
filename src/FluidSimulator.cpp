@@ -631,16 +631,14 @@ void FluidSimulator::add_forces(FluidDomain &domain, float dt) {
     auto &grid = domain.grid();
     auto accessor = domain.fluidLevelSet().getAccessor();
     auto vel_accessor = grid.velFront()->getAccessor();
-    auto bbox = domain.fluidLevelSet().getLevelSet()->evalActiveVoxelBoundingBox();
-    assert(bbox.min() < bbox.max());
-    for (auto it = bbox.beginZYX(); it != bbox.endZYX(); ++it) {
-        auto coord = (*it);
+    for (auto iter = grid.velFront()->cbeginValueOn(); iter; ++iter) {
+        auto coord = iter.getCoord();
         // Only add force to the liquid cells
-        if (accessor.getValue(coord) < 0) {
-            if (VERTICAL_PLANE) {
-                grid.setVelYHalfIndexed(vel_accessor, coord, grid.velHalfIndexed(vel_accessor, coord)[1] - grav * dt);
-            }
+        // if (accessor.getValue(coord) < 0) {
+        if (VERTICAL_PLANE) {
+            grid.setVelYHalfIndexed(vel_accessor, coord, grid.velHalfIndexed(vel_accessor, coord)[1] - grav * dt);
         }
+        // }
     }
 }
 
