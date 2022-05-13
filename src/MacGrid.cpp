@@ -2,9 +2,18 @@
 
 MacGrid::MacGrid(openvdb::math::Transform::Ptr i2w_transform): i2w_transform(i2w_transform) {
     _vel_front = openvdb::createGrid<openvdb::Vec3dGrid>(openvdb::Vec3d(0));
+    _vel_front->setTransform(i2w_transform);
+    _vel_front->setGridClass(openvdb::GRID_STAGGERED);
     _vel_back = openvdb::createGrid<openvdb::Vec3dGrid>(openvdb::Vec3d(0));
+    _vel_back->setTransform(i2w_transform);
+    _vel_back->setGridClass(openvdb::GRID_STAGGERED);
     _vel_prev = openvdb::createGrid<openvdb::Vec3dGrid>(openvdb::Vec3d(0));
+    _vel_prev->setTransform(i2w_transform);
+    _vel_prev->setGridClass(openvdb::GRID_STAGGERED);
     _vel_diff = openvdb::createGrid<openvdb::Vec3dGrid>(openvdb::Vec3d(0));
+    _vel_diff->setTransform(i2w_transform);
+    _vel_diff->setGridClass(openvdb::GRID_STAGGERED);
+
 }
 
 MacGrid::~MacGrid() {}
