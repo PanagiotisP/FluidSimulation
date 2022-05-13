@@ -8,20 +8,25 @@
 #include <Eigen/IterativeLinearSolvers>
 #include <Eigen/SparseCore>
 #include <chrono>
+#include <openvdb/math/Stats.h>
 #include <openvdb/openvdb.h>
 #include <openvdb/tools/Composite.h>
 #include <openvdb/tools/Count.h>
+#include <openvdb/tools/FastSweeping.h>
+#include <openvdb/tools/GridOperators.h>
 #include <openvdb/tools/GridTransformer.h>
 #include <openvdb/tools/Interpolation.h>
 #include <openvdb/tools/Morphology.h>
 #include <openvdb/tools/ParticleAtlas.h>
 #include <openvdb/tools/PointsToMask.h>
+#include <openvdb/tools/TopologyToLevelSet.h>
 #include <random>
 #include <tbb/parallel_for.h>
 #include <tbb/parallel_reduce.h>
 
 // #define PRINT
 #define VERTICAL_PLANE true
+#define GATHER_TRANSFER
 const float epsilon = 10e-37;
 
 float liquid_bound_x0, liquid_bound_x1;
@@ -32,52 +37,43 @@ float solid_bound_y0, solid_bound_y1;
 
 class GatherTransfer {
 public:
-    openvdb::Vec3dGrid::Ptr vel_weight;
-    openvdb::Vec3dGrid::Ptr vel;
+    const openvdb::Vec3dGrid::Ptr &vel_weight;
+    const openvdb::Vec3dGrid::Ptr &vel;
     openvdb::tools::ParticleAtlas<openvdb::tools::PointIndexGrid>::Ptr &p_atlas;
     openvdb::CoordBBox &bbox;
     FluidDomain &domain;
-    void operator()(const tbb::blocked_range<int> &i_range) {
+    void operator()(const tbb::blocked_range<int> &i_range) const {
         auto back_accessor = vel->getAccessor();
         auto vel_weight_accessor = vel_weight->getAccessor();
         openvdb::tools::ParticleAtlas<openvdb::tools::PointIndexGrid>::Iterator p_it(*p_atlas);
         for (int i = i_range.begin(); i < i_range.end(); ++i) {
             for (int j = bbox.min()[1]; j < bbox.max()[1]; ++j) {
                 for (int k = bbox.min()[2]; k < bbox.max()[2]; ++k) {
-                    p_it.worldSpaceSearchAndUpdate(domain.i2w_transform->indexToWorld(openvdb::Coord(i, j, k)),
-                                                   1.5 * domain.voxelSize(), domain.particleSet());
+                    p_it.worldSpaceSearchAndUpdate(
+                        domain.i2w_transform->indexToWorld(
+                            openvdb::BBoxd(openvdb::Vec3d(i - 1, j - 1, k - 1), openvdb::Vec3d(i + 1, j + 1, k + 1))),
+                        domain.particleSet());
                     for (; p_it; ++p_it) {
                         auto &p = domain.particleSet()[*p_it];
 
                         auto coord = openvdb::Coord(i, j, k);
-                        openvdb::Vec3d weight_vec(
-                            FluidSimulator::calculate_kernel_function_staggered(p->pos() - coord.asVec3d()));
-                        vel_weight_accessor.setValue(coord, vel_weight_accessor.getValue(coord) + weight_vec);
-                        back_accessor.setValue(coord, back_accessor.getValue(coord) + weight_vec * p->vel());
+                            openvdb::Vec3d weight_vec(
+                                FluidSimulator::calculate_kernel_function_staggered(p.pos() - coord.asVec3d()));
+                        if (!weight_vec.isZero()) {
+                            vel_weight_accessor.setValue(coord, vel_weight_accessor.getValue(coord) + weight_vec);
+                            back_accessor.setValue(coord, back_accessor.getValue(coord) + weight_vec * p.vel());
+                        }
                     }
                 }
             }
         }
     }
 
-    GatherTransfer(GatherTransfer &x, tbb::split):
-     domain(x.domain), p_atlas(x.p_atlas), bbox(x.bbox),
-     vel_weight(openvdb::Vec3DGrid::create(openvdb::Vec3d(epsilon))),
-     vel(openvdb::Vec3DGrid::create(openvdb::Vec3d(0))) {}
-
     GatherTransfer(FluidDomain &domain, openvdb::tools::ParticleAtlas<openvdb::tools::PointIndexGrid>::Ptr &p_atlas,
-                   openvdb::CoordBBox &bbox):
+                   openvdb::CoordBBox &bbox, const openvdb::Vec3dGrid::Ptr &vel,
+                   const openvdb::Vec3dGrid::Ptr &vel_weight):
      domain(domain),
-     p_atlas(p_atlas), bbox(bbox), vel_weight(openvdb::Vec3DGrid::create(openvdb::Vec3d(epsilon))),
-     vel(openvdb::Vec3DGrid::create(openvdb::Vec3d(0))) {
-        vel_weight->setTransform(domain.i2w_transform);
-
-        vel->setTransform(domain.i2w_transform);
-    }
-    void join(const GatherTransfer &y) {
-        openvdb::tools::compSum(*vel, *y.vel);
-        openvdb::tools::compSum(*vel_weight, *y.vel_weight);
-    }
+     p_atlas(p_atlas), bbox(bbox), vel_weight(vel_weight), vel(vel) {}
 };
 
 class ShootingTransfer {
@@ -91,7 +87,7 @@ public:
         auto vel_weight_accessor = vel_weight->getAccessor();
         for (int p = p_range.begin(); p < p_range.end(); ++p) {
             auto &particle = p_set[p];
-            auto start_coord = openvdb::Coord::round(particle->pos()).offsetBy(-1, -1, -1);
+            auto start_coord = openvdb::Coord::round(particle.pos()).offsetBy(-1, -1, -1);
             auto end_coord = start_coord.offsetBy(3, 3, 3);
             openvdb::CoordBBox bbox(start_coord, end_coord);
 
@@ -100,9 +96,11 @@ public:
                     for (int k = bbox.min()[2]; k < bbox.max()[2]; ++k) {
                         auto coord = openvdb::Coord(i, j, k);
                         openvdb::Vec3d weight_vec(
-                            FluidSimulator::calculate_kernel_function_staggered(particle->pos() - coord.asVec3d()));
-                        vel_weight_accessor.setValue(coord, vel_weight_accessor.getValue(coord) + weight_vec);
-                        back_accessor.setValue(coord, back_accessor.getValue(coord) + weight_vec * particle->vel());
+                            FluidSimulator::calculate_kernel_function_staggered(particle.pos() - coord.asVec3d()));
+                        if (!weight_vec.isZero()) {
+                            vel_weight_accessor.setValue(coord, vel_weight_accessor.getValue(coord) + weight_vec);
+                            back_accessor.setValue(coord, back_accessor.getValue(coord) + weight_vec * particle.vel());
+                        }
                     }
                 }
             }
@@ -117,7 +115,7 @@ public:
      domain(domain), p_set(p_set), vel_weight(openvdb::Vec3DGrid::create(openvdb::Vec3d(epsilon))),
      vel(openvdb::Vec3DGrid::create(openvdb::Vec3d(0))) {
         vel_weight->setTransform(domain.i2w_transform);
-
+        vel->setGridClass(openvdb::GRID_STAGGERED);
         vel->setTransform(domain.i2w_transform);
     }
     void join(const ShootingTransfer &y) {
@@ -283,28 +281,40 @@ void FluidSimulator::print_velocity_field(MacGrid &grid, const char *variable_na
 
 void FluidSimulator::transfer_from_particles_to_grid(FluidDomain &domain) {
     MacGrid &grid = domain.grid();
+    grid.velBack()->clear();
 
-    // The domain of kernel function that gives non-zero value is [-1.5, 1.5]
-    // That means that for a given cell (i,j) the grid points with a possible non-zero value are 16:
-    // The corners of the grid cell + the corners of the adjacent in 8-way connectivity grid cells
-    //  o -   o   - o - o
-    //  o -   o   - o - o
-    //  o - (i,j) - o - o
-    //  o -   o   - o - o
+#ifdef GATHER_TRANSFER
+    openvdb::Vec3dGrid::Ptr vel_weight(openvdb::Vec3DGrid::create(openvdb::Vec3d(epsilon)));
+    vel_weight->setTransform(domain.i2w_transform);
+
+    // Zero out radius for the atlas creation as we care only for the particles whose center lies inside a voxel
+    auto radius = domain.particleSet().getRadius();
+    domain.particleSet().setRadius(0);
 
     auto p_atlas = openvdb::tools::ParticleAtlas<openvdb::tools::PointIndexGrid>::create<ParticleSet>(
         domain.particleSet(), domain.voxelSize());
 
-    auto bbox = domain.fluidLevelSet().getLevelSet()->evalActiveVoxelBoundingBox();
-    assert(bbox.min() < bbox.max());
+    auto pointMask = openvdb::tools::createPointMask(domain.particleSet(), grid.velBack()->transform());
+    openvdb::tools::dilateActiveValues(pointMask->tree(), 1, openvdb::tools::NN_FACE_EDGE_VERTEX);
 
-    // GatherTransfer f(domain, p_atlas, bbox);
-    // tbb::parallel_reduce(tbb::blocked_range<int>(bbox.min()[0], bbox.max()[0]), f);
+    grid.velBack()->tree().topologyUnion(pointMask->tree());
+    grid.velBack()->tree().voxelizeActiveTiles();
+
+    vel_weight->tree().topologyUnion(pointMask->tree());
+    vel_weight->tree().voxelizeActiveTiles();
+
+    auto bbox = pointMask->evalActiveVoxelBoundingBox();
+    tbb::parallel_for(tbb::blocked_range<int>(bbox.min()[0], bbox.max()[0], 1), GatherTransfer(domain, p_atlas, bbox, grid.velBack(), vel_weight));
+    domain.particleSet().setRadius(radius);
+    openvdb::tools::compDiv<openvdb::Vec3dGrid>(*grid.velBack(), *vel_weight);
+
+#else
     ShootingTransfer f(domain, domain.particleSet());
-    tbb::parallel_reduce(tbb::blocked_range<int>(0, domain.particleSet().size()), f);
-
+    tbb::parallel_reduce(tbb::blocked_range<int>(0, domain.particleSet().size(), 1), f);
     openvdb::tools::compDiv<openvdb::Vec3dGrid>(*f.vel, *f.vel_weight);
     grid.setVelBack(f.vel->deepCopy());
+#endif
+
     grid.swapVelocityBuffers();
 }
 
