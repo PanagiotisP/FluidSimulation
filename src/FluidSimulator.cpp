@@ -515,6 +515,8 @@ void FluidSimulator::extrapolate_data(FluidDomain &domain, int iterations_n) {
     }
 }
 
+int particles_num = 0;
+
 void FluidSimulator::advance_flip_pic(FluidDomain &domain, float t_frame, float flip_pic_ratio = 0.98) {
     float t = 0;
     while (t < t_frame) {
@@ -539,6 +541,11 @@ void FluidSimulator::advance_flip_pic(FluidDomain &domain, float t_frame, float 
         t_end = std::chrono::high_resolution_clock::now();
         auto reseeding_duration = std::chrono::duration_cast<std::chrono::milliseconds>(t_end - t_start);
         print_velocity_field(domain.grid(), "before transfer");
+
+        if (particles_num != domain.particleSet().size()) {
+            particles_num = domain.particleSet().size();
+            std::cout << "Number of particles: " << particles_num << std::endl;
+        }
 
         t_start = std::chrono::high_resolution_clock::now();
         transfer_from_particles_to_grid(domain);
