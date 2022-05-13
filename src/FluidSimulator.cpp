@@ -941,9 +941,9 @@ openvdb::Vec3d FluidSimulator::calculate_kernel_function_staggered(openvdb::Vec3
     float val_y_0 = calculate_trilinear_hat(difference[1]);
     float val_z_0 = calculate_trilinear_hat(difference[2]);
 
-    float val_x_1 = calculate_trilinear_hat(difference[0] - 0.5);
-    float val_y_1 = calculate_trilinear_hat(difference[1] - 0.5);
-    float val_z_1 = calculate_trilinear_hat(difference[2] - 0.5);
+    float val_x_1 = calculate_trilinear_hat(difference[0] + 0.5);
+    float val_y_1 = calculate_trilinear_hat(difference[1] + 0.5);
+    float val_z_1 = calculate_trilinear_hat(difference[2] + 0.5);
 
-    return openvdb::Vec3d(val_x_0 * val_y_1 * val_z_1, val_x_1 * val_y_0 * val_z_1, val_x_1 * val_y_1 * val_z_0);
+    return openvdb::Vec3d(val_x_1 * val_y_0 * val_z_0, val_x_0 * val_y_1 * val_z_0, val_x_0 * val_y_0 * val_z_1);
 }
