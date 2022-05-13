@@ -932,9 +932,9 @@ void FluidSimulator::project(FluidDomain &domain, float dt) {
     t_end = std::chrono::high_resolution_clock::now();
     auto update_duration = std::chrono::duration_cast<std::chrono::milliseconds>(t_end - t_start);
 
-    printf(
-        "weights_duration %.3f, system_build_duration %.3f, solver_duration %.3f, update_duration %.3f \n", weights_duration.count() / 1000.f, system_build_duration.count() / 1000.f,
-        solver_duration.count() / 1000.f, update_duration.count() / 1000.f);
+    printf("weights_duration %.3f, system_build_duration %.3f, solver_duration %.3f, update_duration %.3f \n",
+           weights_duration.count() / 1000.f, system_build_duration.count() / 1000.f, solver_duration.count() / 1000.f,
+           update_duration.count() / 1000.f);
 
     grid.swapVelocityBuffers();
 }
