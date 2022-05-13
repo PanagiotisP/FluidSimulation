@@ -122,8 +122,8 @@ int main(int argc, char **argv) {
     auto solidBBox = openvdb::tools::createLevelSetBox<openvdb::FloatGrid, openvdb::Vec3d>(
         openvdb::BBoxd(i2w_transform->indexToWorld(openvdb::Vec3d(1, 1, 1)),
                        i2w_transform->indexToWorld(openvdb::Vec3d(nx - 2, ny - 2, nz - 2))),
-        *i2w_transform);
-    FluidSimulator sim(solidBBox->evalActiveVoxelBoundingBox());
+        *i2w_transform, 5);
+    FluidSimulator sim(openvdb::CoordBBox(openvdb::Coord(0, 0, 0), openvdb::Coord(nx - 1, ny - 1, nz - 1)));
     FluidDomain fluidDomain(solidBBox, openvdb::createLevelSet<openvdb::FloatGrid>(voxel_size),
                             i2w_transform, voxel_size);
     fluidDomain.fluidLevelSet().getLevelSet()->setTransform(i2w_transform);
