@@ -575,9 +575,12 @@ void FluidSimulator::advance_flip_pic(FluidDomain &domain, float t_frame, float 
         t_end = std::chrono::high_resolution_clock::now();
         auto project_duration = std::chrono::duration_cast<std::chrono::milliseconds>(t_end - t_start);
         print_velocity_field(domain.grid(), "after project");
-        extrapolate_data(domain, 1);
-        enforceDirichlet(domain);
-        print_velocity_field(domain.grid(), "after dirichlet");
+        t_start = std::chrono::high_resolution_clock::now();
+        extrapolate_data(domain, 2);
+        t_end = std::chrono::high_resolution_clock::now();
+        extrapolate_data_duration += std::chrono::duration_cast<std::chrono::milliseconds>(t_end - t_start);
+        print_velocity_field(domain.grid(), "after extrapolation");
+
         // Eulerian grid part END
 
         domain.grid().updateDiffBuffers();
