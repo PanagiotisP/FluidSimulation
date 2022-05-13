@@ -3,8 +3,6 @@
 #ifndef MAC_GRID_H
     #define MAC_GRID_H
 
-    #include "Grid.h"
-
 //#include <glm/glm.hpp>
 
     #include "util.h"

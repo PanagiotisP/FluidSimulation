@@ -1,7 +1,6 @@
 #ifndef LEVELSET_H
 #define LEVELSET_H
 
-#include "Grid.h"
 #include "ParticleSet.h"
 #include "util.h"
 #include "vec.h"

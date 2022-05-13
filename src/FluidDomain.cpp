@@ -48,10 +48,9 @@ void FluidSource::update(MacGrid &grid, ParticleSet &particle_set, float dt) {
     }
 }
 
-FluidDomain::FluidDomain(int size_x, int size_y, float length_x, float length_y,
-                         openvdb::FloatGrid::Ptr solid_level_set, openvdb::FloatGrid::Ptr fluid_level_set,
+FluidDomain::FluidDomain(openvdb::FloatGrid::Ptr solid_level_set, openvdb::FloatGrid::Ptr fluid_level_set,
                          openvdb::math::Transform::Ptr i2w_transform, float voxel_size):
- _grid(size_x, size_y, length_x, length_y),
+ _grid(i2w_transform),
  solid_level_set(solid_level_set), fluid_level_set(fluid_level_set), particle_set(i2w_transform),
  i2w_transform(i2w_transform), voxel_size(voxel_size) {
     particle_set.setRadius(1.01f * voxel_size * sqrt(3) / 2.f);

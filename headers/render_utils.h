@@ -10,6 +10,12 @@
 #include <array>
 #include <vector>
 
+template <class T>
+struct BBox {
+    T x_min, x_max, y_min, y_max;
+    BBox(): x_min(0), x_max(0), y_min(0), y_max(0) {}
+    BBox(T x_min, T x_max, T y_min, T y_max): x_min(x_min), x_max(x_max), y_min(y_min), y_max(y_max) {}
+};
 // Axis aligned rectangular box
 template <typename T>
 DistanceFunction distance_from_axis_aligned_box(BBox<T> box_coords, bool inverted = false) {
