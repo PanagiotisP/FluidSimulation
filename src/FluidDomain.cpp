@@ -74,7 +74,7 @@ void FluidDomain::constructFluidLevelSetFromMarkerParticles() {
         auto fluidGridTopology = openvdb::createGrid<openvdb::MaskGrid>();
         fluidGridTopology->tree().topologyUnion(fluid_level_set.getLevelSet()->tree());
         fluid_level_set.getLevelSet()->tree().combineExtended(solid_level_set.getLevelSet()->deepCopy()->tree(),
-                                                      IntersectSolidFluidLevelSets::intersect, true);
+                                                              IntersectSolidFluidLevelSets::intersect, true);
         fluid_level_set.getLevelSet()->tree().topologyIntersection(fluidGridTopology->tree());
     }
 }

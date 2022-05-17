@@ -57,8 +57,8 @@ public:
                         auto &p = domain.particleSet()[*p_it];
 
                         auto coord = openvdb::Coord(i, j, k);
-                            openvdb::Vec3d weight_vec(
-                                FluidSimulator::calculate_kernel_function_staggered(p.pos() - coord.asVec3d()));
+                        openvdb::Vec3d weight_vec(
+                            FluidSimulator::calculate_kernel_function_staggered(p.pos() - coord.asVec3d()));
                         if (!weight_vec.isZero()) {
                             vel_weight_accessor.setValue(coord, vel_weight_accessor.getValue(coord) + weight_vec);
                             back_accessor.setValue(coord, back_accessor.getValue(coord) + weight_vec * p.vel());
@@ -295,7 +295,7 @@ void FluidSimulator::transfer_from_particles_to_grid(FluidDomain &domain) {
         domain.particleSet(), domain.voxelSize());
 
     auto pointMask = openvdb::tools::createPointMask(domain.particleSet(), grid.velBack()->transform());
-    openvdb::tools::dilateActiveValues(pointMask->tree(), 1, openvdb::tools::NN_FACE_EDGE_VERTEX);
+    openvdb::tools::dilateActiveValues(pointMask->tree(), 2, openvdb::tools::NN_FACE_EDGE_VERTEX);
 
     grid.velBack()->tree().topologyUnion(pointMask->tree());
     grid.velBack()->tree().voxelizeActiveTiles();
@@ -304,7 +304,8 @@ void FluidSimulator::transfer_from_particles_to_grid(FluidDomain &domain) {
     vel_weight->tree().voxelizeActiveTiles();
 
     auto bbox = pointMask->evalActiveVoxelBoundingBox();
-    tbb::parallel_for(tbb::blocked_range<int>(bbox.min()[0], bbox.max()[0], 1), GatherTransfer(domain, p_atlas, bbox, grid.velBack(), vel_weight));
+    tbb::parallel_for(tbb::blocked_range<int>(bbox.min()[0], bbox.max()[0], 1),
+                      GatherTransfer(domain, p_atlas, bbox, grid.velBack(), vel_weight));
     domain.particleSet().setRadius(radius);
     openvdb::tools::compDiv<openvdb::Vec3dGrid>(*grid.velBack(), *vel_weight);
 
@@ -699,7 +700,7 @@ void FluidSimulator::project(FluidDomain &domain, float dt) {
         * resampledSolidLevelSet->transformPtr()->baseMap()->getAffineMap()->getMat4().inverse());
 
     transformer.transformGrid<openvdb::tools::BoxSampler, openvdb::FloatGrid>(*domain.solidLevelSet().getLevelSet(),
-                                                                               *resampledSolidLevelSet);
+                                                                              *resampledSolidLevelSet);
     auto border_mask = openvdb::tools::extractIsosurfaceMask(*domain.solidLevelSet().getLevelSet(), 0);
     openvdb::tools::dilateActiveValues(border_mask->tree(), 1, openvdb::tools::NN_FACE_EDGE_VERTEX);
 
