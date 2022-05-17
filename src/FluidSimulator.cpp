@@ -384,15 +384,6 @@ void FluidSimulator::extrapolate_data(FluidDomain &domain, int iterations_n) {
         auto valid_mask_w_back_buffer_accessor = grid.validWBack()->getAccessor();
         auto solidAccessor = domain.solidLevelSet().getAccessor();
 
-    grid.velBack()->clear();
-
-    auto bbox = domain.fluidLevelSet().getActiveCoordBBox();
-    assert(bbox.min() < bbox.max());
-    for (auto it = bbox.beginZYX(); it != bbox.endZYX(); ++it) {
-        auto coord = (*it);
-        auto prev_vel = grid.velHalfIndexed(vel_front_accessor, coord);
-
-
         for (auto it = _bbox.beginZYX(); it != _bbox.endZYX(); ++it) {
             auto coord = (*it);
 
