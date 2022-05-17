@@ -29,11 +29,11 @@ MacGrid::MacGrid(openvdb::math::Transform::Ptr i2w_transform): i2w_transform(i2w
     valid_mask_w_back_buffer = openvdb::MaskGrid::create();
     valid_mask_w_back_buffer->setTransform(i2w_transform);
 
-    u_weights = openvdb::createGrid<openvdb::FloatGrid>(0);
+    u_weights = openvdb::createGrid<openvdb::FloatGrid>(1);
     u_weights->setTransform(i2w_transform);
-    v_weights = openvdb::createGrid<openvdb::FloatGrid>(0);
+    v_weights = openvdb::createGrid<openvdb::FloatGrid>(1);
     v_weights->setTransform(i2w_transform);
-    w_weights = openvdb::createGrid<openvdb::FloatGrid>(0);
+    w_weights = openvdb::createGrid<openvdb::FloatGrid>(1);
     w_weights->setTransform(i2w_transform);
 }
 

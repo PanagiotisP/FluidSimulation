@@ -696,9 +696,9 @@ void FluidSimulator::project(FluidDomain &domain, float dt) {
     float v_solid = 0;
     float w_solid = 0;
 
-    auto u_weights_accessor = grid.uWeights()->getAccessor();
-    auto v_weights_accessor = grid.vWeights()->getAccessor();
-    auto w_weights_accessor = grid.wWeights()->getAccessor();
+    grid.uWeights()->clear();
+    grid.vWeights()->clear();
+    grid.wWeights()->clear();
 
     auto t_start = std::chrono::high_resolution_clock::now();
     // Resample solid level set to get values at bottom left corner of voxels
@@ -708,23 +708,39 @@ void FluidSimulator::project(FluidDomain &domain, float dt) {
         * resampledSolidLevelSet->transformPtr()->baseMap()->getAffineMap()->getMat4().inverse());
 
     transformer.transformGrid<openvdb::tools::BoxSampler, openvdb::FloatGrid>(*domain.solidLevelSet().getLevelSet(),
-                                                                              *resampledSolidLevelSet);
-    auto targetAccessor = resampledSolidLevelSet->getAccessor();
-    for (auto it = _bbox.beginZYX(); it != _bbox.endZYX(); ++it) {
-        auto coord = (*it);
+                                                                               *resampledSolidLevelSet);
+    auto border_mask = openvdb::tools::extractIsosurfaceMask(*domain.solidLevelSet().getLevelSet(), 0);
+    openvdb::tools::dilateActiveValues(border_mask->tree(), 1, openvdb::tools::NN_FACE_EDGE_VERTEX);
 
-        auto point_000 = targetAccessor.getValue(coord);
-        auto point_001 = targetAccessor.getValue(coord.offsetBy(0, 0, 1));
-        auto point_010 = targetAccessor.getValue(coord.offsetBy(0, 1, 0));
-        auto point_011 = targetAccessor.getValue(coord.offsetBy(0, 1, 1));
-        auto point_100 = targetAccessor.getValue(coord.offsetBy(1, 0, 0));
-        auto point_101 = targetAccessor.getValue(coord.offsetBy(1, 0, 1));
-        auto point_110 = targetAccessor.getValue(coord.offsetBy(1, 1, 0));
+    grid.uWeights()->tree().topologyUnion(border_mask->tree());
+    grid.wWeights()->tree().topologyUnion(border_mask->tree());
+    grid.vWeights()->tree().topologyUnion(border_mask->tree());
 
-        u_weights_accessor.setValue(coord, 1 - LevelSet::fraction_inside(point_000, point_010, point_001, point_011));
-        v_weights_accessor.setValue(coord, 1 - LevelSet::fraction_inside(point_000, point_001, point_100, point_101));
-        w_weights_accessor.setValue(coord, 1 - LevelSet::fraction_inside(point_000, point_010, point_100, point_110));
-    }
+    openvdb::tree::IteratorRange<openvdb::BoolGrid::ValueOnCIter> range(border_mask->cbeginValueOn());
+    tbb::parallel_for(range, [&](openvdb::tree::IteratorRange<openvdb::BoolGrid::ValueOnCIter> range) {
+        auto targetAccessor = resampledSolidLevelSet->getAccessor();
+        auto u_weights_accessor = grid.uWeights()->getAccessor();
+        auto v_weights_accessor = grid.vWeights()->getAccessor();
+        auto w_weights_accessor = grid.wWeights()->getAccessor();
+        for (; range; ++range) {
+            auto coord = range.iterator().getCoord();
+
+            auto point_000 = targetAccessor.getValue(coord);
+            auto point_001 = targetAccessor.getValue(coord.offsetBy(0, 0, 1));
+            auto point_010 = targetAccessor.getValue(coord.offsetBy(0, 1, 0));
+            auto point_011 = targetAccessor.getValue(coord.offsetBy(0, 1, 1));
+            auto point_100 = targetAccessor.getValue(coord.offsetBy(1, 0, 0));
+            auto point_101 = targetAccessor.getValue(coord.offsetBy(1, 0, 1));
+            auto point_110 = targetAccessor.getValue(coord.offsetBy(1, 1, 0));
+
+            u_weights_accessor.setValue(coord,
+                                        1 - LevelSet::fraction_inside(point_000, point_010, point_001, point_011));
+            v_weights_accessor.setValue(coord,
+                                        1 - LevelSet::fraction_inside(point_000, point_001, point_100, point_101));
+            w_weights_accessor.setValue(coord,
+                                        1 - LevelSet::fraction_inside(point_000, point_010, point_100, point_110));
+        }
+    });
     auto t_end = std::chrono::high_resolution_clock::now();
     auto weights_duration = std::chrono::duration_cast<std::chrono::milliseconds>(t_end - t_start);
 
@@ -864,7 +880,9 @@ void FluidSimulator::project(FluidDomain &domain, float dt) {
 
     grid.velBack()->clear();
     vel_back_accessor = grid.velBack()->getAccessor();
-
+    auto u_weights_accessor = grid.uWeights()->getAccessor();
+    auto v_weights_accessor = grid.vWeights()->getAccessor();
+    auto w_weights_accessor = grid.wWeights()->getAccessor();
     for (auto it = _bbox.beginZYX(); it != _bbox.endZYX(); ++it) {
         auto coord = (*it);
         int idx = fluid_indices_accessor.getValue(coord);
