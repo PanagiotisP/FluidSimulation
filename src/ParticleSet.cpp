@@ -3,6 +3,7 @@
 #include "util.h"
 
 #include <openvdb/tools/Interpolation.h>
+#include <openvdb/tools/PointAdvect.h>
 #include <tbb/parallel_for.h>
 
 Particle::Particle() {}
@@ -15,25 +16,26 @@ ParticleSet::~ParticleSet() {};
 
 void ParticleSet::addParticle(const Particle &p) { particles.push_back(p); }
 void ParticleSet::removeParticle(ParticleSet::iterator p) { particles.erase(p); }
-void ParticleSet::advect(float dt) {
-    for (auto it = particles.begin(); it != particles.end(); ++it) it->advect(dt, i2w_transform);
-}
-
-void ParticleSet::advectAndEnsureOutsideObstacles(LevelSet &solid_level_set, openvdb::Vec3fGrid::Ptr cpt_grid,
-                                                  float dt) {
-    // LevelSet::BoxSampler sampler(solid_level_set.getAccessor(), solid_level_set.getLevelSet()->transform());
-    // openvdb::tools::GridSampler<openvdb::Vec3fGrid::Accessor, openvdb::tools::BoxSampler> cpt_sampler(
-    //     cpt_grid->getAccessor(), cpt_grid->transform());
-
-    openvdb::tools::GridSampler<openvdb::FloatGrid, openvdb::tools::BoxSampler> sampler(*solid_level_set.getLevelSet());
-    openvdb::tools::GridSampler<openvdb::Vec3fGrid, openvdb::tools::BoxSampler> cpt_sampler(*cpt_grid);
-
-    tbb::parallel_for(tbb::blocked_range<int>(0, particles.size()), [&](tbb::blocked_range<int> &range) {
-        for (int i = range.begin(); i < range.end(); ++i) {
-            particles[i].advect(dt, i2w_transform);
-            if (sampler.isSample(particles[i].pos()) < 0) {
-                particles[i].setPosition(i2w_transform->worldToIndex(openvdb::Vec3d(cpt_sampler.isSample(particles[i].pos()))));
-            }
+void ParticleSet::advectAndEnsureOutsideObstacles(openvdb::Vec3dGrid::Ptr vel_grid, openvdb::Vec3fGrid::Ptr cpt_grid,
+                                                  openvdb::FloatGrid::Ptr solid_level_set, float dt) {  
+    // Probably costly way of extracting positions
+    std::vector<openvdb::Vec3d> positions(particles.size());
+    tbb::parallel_for(tbb::blocked_range<int>(0, particles.size()), [&](tbb::blocked_range<int> r) {
+        for (int i = r.begin(); i < r.end(); ++i) { positions[i] = i2w_transform->indexToWorld(particles[i].pos()); }
+    });
+    openvdb::tools::PointAdvect<openvdb::Vec3dGrid, std::vector<openvdb::Vec3d>, 1> p_advect(*vel_grid);
+    p_advect.setIntegrationOrder(3);
+    p_advect.advect(positions, dt);
+    tbb::parallel_for(tbb::blocked_range<int>(0, particles.size()), [&](tbb::blocked_range<int> r) {
+        openvdb::tools::GridSampler<openvdb::FloatGrid::Accessor, openvdb::tools::BoxSampler> solidSampler(
+            solid_level_set->getAccessor(), solid_level_set->transform());
+        openvdb::tools::GridSampler<openvdb::Vec3fGrid::Accessor, openvdb::tools::BoxSampler> cptSampler(
+            cpt_grid->getAccessor(), cpt_grid->transform());
+        for (int i = r.begin(); i < r.end(); ++i) {
+            if (solidSampler.wsSample(positions[i]) <= 0)
+                particles[i].setPosition(i2w_transform->worldToIndex(cptSampler.wsSample(positions[i])));
+            else
+                particles[i].setPosition(i2w_transform->worldToIndex(positions[i]));
         }
     });
 }

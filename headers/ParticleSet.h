@@ -5,6 +5,7 @@
 #include <memory>
 #include <openvdb/openvdb.h>
 #include <vector>
+#include <openvdb/tools/VelocityFields.h>
 
 class LevelSet;
 
@@ -21,9 +22,10 @@ public:
     inline void setPosition(openvdb::Vec3d pos) { _pos = pos; };
     inline void setVelocity(openvdb::Vec3d vel) { _vel = vel; };
 
-    inline void advect(float dt, openvdb::math::Transform::Ptr i2w_transform) {
+    inline void advect(float dt, openvdb::math::Transform::Ptr i2w_transform,
+                       const openvdb::tools::VelocityIntegrator<openvdb::Vec3dGrid, 1> &rk_integrator) {
         auto ws_point = i2w_transform->indexToWorld(_pos);
-        ws_point += _vel * dt;
+        rk_integrator.rungeKutta<1, openvdb::Vec3d>(dt, ws_point);
         _pos = i2w_transform->worldToIndex(ws_point);
     }
 
@@ -42,8 +44,7 @@ public:
     void addParticle(const Particle &p);
     inline void pop_back() { particles.pop_back(); };
     void removeParticle(ParticleSet::iterator p);
-    void advect(float dt);
-    void advectAndEnsureOutsideObstacles(LevelSet &solid_level_set, openvdb::Vec3fGrid::Ptr cpt_grid, float dt);
+    void advectAndEnsureOutsideObstacles(openvdb::Vec3dGrid::Ptr, openvdb::Vec3fGrid::Ptr cpt_grid, openvdb::FloatGrid::Ptr solid_level_set, float dt);
 
     inline ParticleSet::iterator begin() { return particles.begin(); };
     inline ParticleSet::iterator end() { return particles.end(); };

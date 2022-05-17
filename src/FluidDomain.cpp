@@ -81,7 +81,8 @@ void FluidDomain::constructFluidLevelSetFromMarkerParticles() {
 
 void FluidDomain::advectParticles(float dt) {
     auto cpt_grid = openvdb::tools::cpt(*solid_level_set.getLevelSet());
-    particle_set.advectAndEnsureOutsideObstacles(solid_level_set, cpt_grid, dt);
+    openvdb::tools::VelocityIntegrator<openvdb::Vec3dGrid, 1> rk_integrator(*_grid.velFront());
+    particle_set.advectAndEnsureOutsideObstacles(_grid.velFront(), cpt_grid, solid_level_set.getLevelSet(), dt);
 }
 
 void FluidDomain::addFluidSource(FluidSource fluid_source) { fluid_sources.push_back(fluid_source); }
