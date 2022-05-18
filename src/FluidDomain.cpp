@@ -25,9 +25,9 @@ void FluidSource::update(MacGrid &grid, ParticleSet &particle_set, float dt) {
 
     auto coordBBox = spawning_region.getActiveCoordBBox();
     auto accessor = spawning_region.getAccessor();
-    LevelSet::BoxSampler sampler(accessor, spawning_region.getLevelSet()->transform());
+    LevelSet::Sampler sampler(accessor, spawning_region.getLevelSet()->transform());
 
-    MacGrid::BoxSampler vel_sampler(grid.velFront()->getAccessor(), spawning_region.getLevelSet()->transform());
+    MacGrid::Sampler vel_sampler(grid.velFront()->getAccessor(), spawning_region.getLevelSet()->transform());
 
     assert(coordBBox.min() < coordBBox.max());
     for (auto it = coordBBox.beginZYX(); it != coordBBox.endZYX(); ++it) {

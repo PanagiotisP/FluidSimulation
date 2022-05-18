@@ -17,7 +17,7 @@ class ParticleSet;
 
 class LevelSet {
 public:
-    typedef openvdb::tools::GridSampler< openvdb::FloatGrid::Accessor, openvdb::tools::BoxSampler > BoxSampler;
+    typedef openvdb::tools::GridSampler< openvdb::FloatGrid::Accessor, openvdb::tools::BoxSampler > Sampler;
     typedef openvdb::FloatGrid::Accessor FloatAccessor;
     LevelSet(openvdb::FloatGrid::Ptr level_set);
     ~LevelSet();
@@ -25,11 +25,11 @@ public:
     void construct_from_points(ParticleSet &points, float voxel_size);
 
     inline openvdb::FloatGrid::Accessor getAccessor() { return _level_set->getAccessor(); };
-    inline BoxSampler getBoxSampler() { return BoxSampler(_level_set->getAccessor(), _level_set->transform()); };
-    float valueInterpolatedI(BoxSampler &sampler, float x, float y, float z);
-    float valueInterpolatedI(BoxSampler &sampler, openvdb::Vec3R point);
-    float valueInterpolatedW(BoxSampler &sampler, float x, float y, float z);
-    float valueInterpolatedW(BoxSampler &sampler, openvdb::Vec3R point);
+    inline Sampler getBoxSampler() { return Sampler(_level_set->getAccessor(), _level_set->transform()); };
+    float valueInterpolatedI(Sampler &sampler, float x, float y, float z);
+    float valueInterpolatedI(Sampler &sampler, openvdb::Vec3R point);
+    float valueInterpolatedW(Sampler &sampler, float x, float y, float z);
+    float valueInterpolatedW(Sampler &sampler, openvdb::Vec3R point);
 
     inline openvdb::CoordBBox getActiveCoordBBox() { return _level_set->evalActiveVoxelBoundingBox(); };
 

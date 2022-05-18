@@ -33,7 +33,7 @@ void Renderer::initialisation() {
 }
 
 void Renderer::draw(FluidDomain &fluidDomain, sf::RenderWindow &window) {
-    MacGrid::BoxSampler vel_sampler(fluidDomain.grid().velFront()->getAccessor(),
+    MacGrid::Sampler vel_sampler(fluidDomain.grid().velFront()->getAccessor(),
                                     fluidDomain.grid().velFront()->transform());
     if (SHOW_VECTORS) {
         for (int j = 0; j < sim_size_y; ++j) {
@@ -65,8 +65,8 @@ void Renderer::draw(FluidDomain &fluidDomain, sf::RenderWindow &window) {
     if (SHOW_GRID_VOXELS) {
         auto fluidAccessor = fluidDomain.fluidLevelSet().getAccessor();
         auto solidAccessor = fluidDomain.solidLevelSet().getAccessor();
-        LevelSet::BoxSampler fluidSampler(fluidAccessor, fluidDomain.fluidLevelSet().getLevelSet()->transform());
-        LevelSet::BoxSampler solidSampler(solidAccessor, fluidDomain.solidLevelSet().getLevelSet()->transform());
+        LevelSet::Sampler fluidSampler(fluidAccessor, fluidDomain.fluidLevelSet().getLevelSet()->transform());
+        LevelSet::Sampler solidSampler(solidAccessor, fluidDomain.solidLevelSet().getLevelSet()->transform());
 
         for (int j = 0; j < sim_size_y; ++j) {
             for (int i = 0; i < sim_size_x; ++i) {

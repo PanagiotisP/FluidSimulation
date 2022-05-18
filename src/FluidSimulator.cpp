@@ -140,7 +140,7 @@ public:
 
     openvdb::tools::ParticleAtlas<openvdb::tools::PointIndexGrid>::Ptr &p_atlas;
     void operator()(openvdb::tree::IteratorRange<openvdb::MaskGrid::ValueOnCIter> &range) {
-        MacGrid::BoxSampler vel_sampler(vel->getAccessor(), vel->transform());
+        MacGrid::Sampler vel_sampler(vel->getAccessor(), vel->transform());
         openvdb::tools::ParticleAtlas<openvdb::tools::PointIndexGrid>::Iterator p_it(*p_atlas);
         auto active_mask_accessor = active_mask->getAccessor();
         for (; range; ++range) {
@@ -322,10 +322,8 @@ void FluidSimulator::transfer_from_particles_to_grid(FluidDomain &domain) {
 void FluidSimulator::transfer_from_grid_to_particles(FluidDomain &domain, float flip_pic_ratio = 0.98) {
     MacGrid &grid = domain.grid();
     tbb::parallel_for(tbb::blocked_range<int>(0, domain.particleSet().size(), 1), [&](tbb::blocked_range<int> range) {
-        openvdb::tools::GridSampler<openvdb::Vec3dGrid::Accessor, openvdb::tools::StaggeredBoxSampler> vel_sampler(
-            domain.grid().velFront()->getAccessor(), domain.grid().velFront()->transform());
-        openvdb::tools::GridSampler<openvdb::Vec3dGrid::Accessor, openvdb::tools::StaggeredBoxSampler> vel_diff_sampler(
-            domain.grid().velDiff()->getAccessor(), domain.grid().velDiff()->transform());
+        MacGrid::Sampler vel_sampler(domain.grid().velFront()->getAccessor(), domain.grid().velFront()->transform());
+        MacGrid::Sampler vel_diff_sampler(domain.grid().velDiff()->getAccessor(), domain.grid().velDiff()->transform());
         for (int i = range.begin(); i < range.end(); ++i) {
             auto &p = domain.particleSet()[i];
             openvdb::Vec3d pic_vel = vel_sampler.isSample(p.pos());
@@ -973,12 +971,9 @@ void FluidSimulator::constrain_velocity(FluidDomain &domain) {
     openvdb::tools::GridSampler<openvdb::Vec3SGrid::Accessor, openvdb::tools::BoxSampler> grad_staggered_z_sampler(
         gradient->getAccessor(), gradient->transform());
 
-    openvdb::tools::GridSampler<openvdb::Vec3DGrid::Accessor, openvdb::tools::StaggeredBoxSampler>
-        vel_staggered_x_sampler(grid.velFront()->getAccessor(), grid.velFront()->transform());
-    openvdb::tools::GridSampler<openvdb::Vec3DGrid::Accessor, openvdb::tools::StaggeredBoxSampler>
-        vel_staggered_y_sampler(grid.velFront()->getAccessor(), grid.velFront()->transform());
-    openvdb::tools::GridSampler<openvdb::Vec3DGrid::Accessor, openvdb::tools::StaggeredBoxSampler>
-        vel_staggered_z_sampler(grid.velFront()->getAccessor(), grid.velFront()->transform());
+    MacGrid::Sampler vel_staggered_x_sampler(grid.velFront()->getAccessor(), grid.velFront()->transform());
+    MacGrid::Sampler vel_staggered_y_sampler(grid.velFront()->getAccessor(), grid.velFront()->transform());
+    MacGrid::Sampler vel_staggered_z_sampler(grid.velFront()->getAccessor(), grid.velFront()->transform());
 
     auto unionMask = openvdb::createGrid<openvdb::MaskGrid>();
     unionMask->tree().topologyUnion(grid.uWeights()->tree());

@@ -27,7 +27,7 @@ void ParticleSet::advectAndEnsureOutsideObstacles(openvdb::Vec3dGrid::Ptr vel_gr
     p_advect.setIntegrationOrder(3);
     p_advect.advect(positions, dt);
     tbb::parallel_for(tbb::blocked_range<int>(0, particles.size()), [&](tbb::blocked_range<int> r) {
-        openvdb::tools::GridSampler<openvdb::FloatGrid::Accessor, openvdb::tools::BoxSampler> solidSampler(
+        LevelSet::Sampler solidSampler(
             solid_level_set->getAccessor(), solid_level_set->transform());
         openvdb::tools::GridSampler<openvdb::Vec3fGrid::Accessor, openvdb::tools::BoxSampler> cptSampler(
             cpt_grid->getAccessor(), cpt_grid->transform());

@@ -12,19 +12,19 @@ LevelSet::LevelSet(openvdb::FloatGrid::Ptr level_set): _level_set(level_set) {}
 
 LevelSet::~LevelSet() {}
 
-float LevelSet::valueInterpolatedW(LevelSet::BoxSampler &sampler, float x, float y, float z) {
+float LevelSet::valueInterpolatedW(LevelSet::Sampler &sampler, float x, float y, float z) {
     // Need to check whether we are thread-safe or not
     return sampler.wsSample(openvdb::Vec3R(x, y, z));
 }
-float LevelSet::valueInterpolatedW(LevelSet::BoxSampler &sampler, openvdb::Vec3R wsPoint) {
+float LevelSet::valueInterpolatedW(LevelSet::Sampler &sampler, openvdb::Vec3R wsPoint) {
     // Need to check whether we are thread-safe or not
     return sampler.wsSample(wsPoint);
 }
-float LevelSet::valueInterpolatedI(LevelSet::BoxSampler &sampler, float x, float y, float z) {
+float LevelSet::valueInterpolatedI(LevelSet::Sampler &sampler, float x, float y, float z) {
     // Need to check whether we are thread-safe or not
     return sampler.isSample(openvdb::Vec3R(x, y, z));
 }
-float LevelSet::valueInterpolatedI(LevelSet::BoxSampler &sampler, openvdb::Vec3R isPoint) {
+float LevelSet::valueInterpolatedI(LevelSet::Sampler &sampler, openvdb::Vec3R isPoint) {
     // Need to check whether we are thread-safe or not
     return sampler.isSample(isPoint);
 }
