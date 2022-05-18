@@ -894,7 +894,7 @@ void FluidSimulator::project(FluidDomain &domain, float dt) {
 
         if (u_weights_accessor.getValue(coord) > 0 && (phi_i_j_k < 0 || phi_i_minus_1_j_k < 0)) {
             float theta = 1;
-            if (solidAccessor.getValue(coord) <= 0 || solidAccessor.getValue(coord.offsetBy(-1, 0, 0)) <= 0) {
+            if (fluidAccessor.getValue(coord) >= 0 || fluidAccessor.getValue(coord.offsetBy(-1, 0, 0)) >= 0) {
                 theta = max(0.001, LevelSet::fraction_inside(phi_i_j_k, phi_i_minus_1_j_k));
             }
             newVel[0] = prevVel[0] - dt / FluidDomain::density * (p - p_i_minus1) / domain.voxelSize() / theta;
@@ -903,7 +903,7 @@ void FluidSimulator::project(FluidDomain &domain, float dt) {
 
         if (v_weights_accessor.getValue(coord) > 0 && (phi_i_j_k < 0 || phi_i_j_minus_1_k < 0)) {
             float theta = 1;
-            if (solidAccessor.getValue(coord) <= 0 || solidAccessor.getValue(coord.offsetBy(0, -1, 0)) <= 0) {
+            if (fluidAccessor.getValue(coord) >= 0 || fluidAccessor.getValue(coord.offsetBy(0, -1, 0)) >= 0) {
                 theta = max(0.001, LevelSet::fraction_inside(phi_i_j_k, phi_i_j_minus_1_k));
             }
             newVel[1] = prevVel[1] - dt / FluidDomain::density * (p - p_j_minus1) / domain.voxelSize() / theta;
@@ -912,7 +912,7 @@ void FluidSimulator::project(FluidDomain &domain, float dt) {
 
         if (w_weights_accessor.getValue(coord) > 0 && (phi_i_j_k < 0 || phi_i_j_k_minus_1 < 0)) {
             float theta = 1;
-            if (solidAccessor.getValue(coord) <= 0 || solidAccessor.getValue(coord.offsetBy(0, 0, -1)) <= 0) {
+            if (fluidAccessor.getValue(coord) >= 0 || fluidAccessor.getValue(coord.offsetBy(0, 0, -1)) >= 0) {
                 theta = max(0.001, LevelSet::fraction_inside(phi_i_j_k, phi_i_j_k_minus_1));
             }
             newVel[2] = prevVel[2] - dt / FluidDomain::density * (p - p_k_minus1) / domain.voxelSize() / theta;
