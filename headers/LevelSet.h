@@ -22,7 +22,7 @@ public:
     LevelSet(openvdb::FloatGrid::Ptr level_set);
     ~LevelSet();
 
-    void construct_from_points(ParticleSet &points, float voxel_size);
+    void unionOfBalls(ParticleSet &points, float voxel_size);
 
     inline openvdb::FloatGrid::Accessor getAccessor() { return _level_set->getAccessor(); };
     inline Sampler getBoxSampler() { return Sampler(_level_set->getAccessor(), _level_set->transform()); };

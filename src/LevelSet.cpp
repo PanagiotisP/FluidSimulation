@@ -29,7 +29,7 @@ float LevelSet::valueInterpolatedI(LevelSet::Sampler &sampler, openvdb::Vec3R is
     return sampler.isSample(isPoint);
 }
 
-void LevelSet::construct_from_points(ParticleSet &points, float voxel_size) {
+void LevelSet::unionOfBalls(ParticleSet &points, float voxel_size) {
     _level_set->clear();
     openvdb::tools::ParticlesToLevelSet<openvdb::FloatGrid> raster(*_level_set);
     raster.setRmin(points.getRadius());

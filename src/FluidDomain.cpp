@@ -70,7 +70,7 @@ void FluidDomain::clearFluidSources() { fluid_sources.clear(); }
 
 void FluidDomain::constructFluidLevelSetFromMarkerParticles() {
     if (particle_set.size() > 0) {
-        fluid_level_set.construct_from_points(particle_set, voxel_size);
+        fluid_level_set.unionOfBalls(particle_set, voxel_size);
         auto fluidGridTopology = openvdb::createGrid<openvdb::MaskGrid>();
         fluidGridTopology->tree().topologyUnion(fluid_level_set.getLevelSet()->tree());
         fluid_level_set.getLevelSet()->tree().combineExtended(solid_level_set.getLevelSet()->deepCopy()->tree(),
