@@ -475,15 +475,100 @@ int sgn(T val) {
 }
 
 template <typename T>
+void cycle_array(T *arr, int size) {
+    T t = arr[0];
+    for (int i = 0; i < size - 1; ++i) arr[i] = arr[i + 1];
+    arr[size - 1] = t;
+}
+
+// Given two signed distance values (line endpoints), determine what fraction of a connecting segment is "inside"
+template <typename T>
 T fraction_inside(T phi_left, T phi_right) {
-   if(phi_left < 0 && phi_right < 0)
-      return 1;
-   if (phi_left < 0 && phi_right >= 0)
-      return phi_left / (phi_left - phi_right);
-   if(phi_left >= 0 && phi_right < 0)
-      return phi_right / (phi_right - phi_left);
-   else
-      return 0;
+    if (phi_left < 0 && phi_right < 0) return 1;
+    if (phi_left < 0 && phi_right >= 0) return phi_left / (phi_left - phi_right);
+    if (phi_left >= 0 && phi_right < 0)
+        return phi_right / (phi_right - phi_left);
+    else
+        return 0;
+}
+
+
+// Given four signed distance values (square corners), determine what fraction of the square is "inside"
+template <typename T>
+T fraction_inside(T phi_bl, T phi_br, T phi_tl, T phi_tr) {
+
+    int inside_count = (phi_bl < 0 ? 1 : 0) + (phi_tl < 0 ? 1 : 0) + (phi_br < 0 ? 1 : 0) + (phi_tr < 0 ? 1 : 0);
+    T list[] = { phi_bl, phi_br, phi_tr, phi_tl };
+    T return_value;
+    if (inside_count == 4)
+        return 1;
+    else if (inside_count == 3) {
+        // rotate until the positive value is in the first position
+        while (list[0] < 0) { cycle_array(list, 4); }
+
+        // Work out the area of the exterior triangle
+        T side0 = 1 - fraction_inside(list[0], list[3]);
+        T side1 = 1 - fraction_inside(list[0], list[1]);
+        return_value = 1 - 0.5f * side0 * side1;
+    } else if (inside_count == 2) {
+
+        // rotate until a negative value is in the first position, and the next negative is in either slot 1 or 2.
+        while (list[0] >= 0 || !(list[1] < 0 || list[2] < 0)) { cycle_array(list, 4); }
+
+        if (list[1] < 0) { // the matching signs are adjacent
+            T side_left = fraction_inside(list[0], list[3]);
+            T side_right = fraction_inside(list[1], list[2]);
+            return_value = 0.5f * (side_left + side_right);
+        } else { // matching signs are diagonally opposite
+            // determine the centre point's sign to disambiguate this case
+            T middle_point = 0.25f * (list[0] + list[1] + list[2] + list[3]);
+            if (middle_point < 0) {
+                T area = 0;
+
+                // first triangle (top left)
+                T side1 = 1 - fraction_inside(list[0], list[3]);
+                T side3 = 1 - fraction_inside(list[2], list[3]);
+
+                area += 0.5f * side1 * side3;
+
+                // second triangle (top right)
+                T side2 = 1 - fraction_inside(list[2], list[1]);
+                T side0 = 1 - fraction_inside(list[0], list[1]);
+                area += 0.5f * side0 * side2;
+
+                return_value = 1 - area;
+            } else {
+                T area = 0;
+
+                // first triangle (bottom left)
+                T side0 = fraction_inside(list[0], list[1]);
+                T side1 = fraction_inside(list[0], list[3]);
+                area += 0.5f * side0 * side1;
+
+                // second triangle (top right)
+                T side2 = fraction_inside(list[2], list[1]);
+                T side3 = fraction_inside(list[2], list[3]);
+                area += 0.5f * side2 * side3;
+                return_value = area;
+            }
+        }
+    } else if (inside_count == 1) {
+        // rotate until the negative value is in the first position
+        while (list[0] >= 0) { cycle_array(list, 4); }
+
+        // Work out the area of the interior triangle, and subtract from 1.
+        T side0 = fraction_inside(list[0], list[3]);
+        T side1 = fraction_inside(list[0], list[1]);
+        return_value = 0.5f * side0 * side1;
+    } else
+        return_value = 0;
+
+    if (return_value > 0.9)
+        return 1;
+    if (return_value < 0.1)
+        return 0;
+    else
+        return clamp(return_value, static_cast<T>(0), static_cast<T>(1));
 }
 
 #endif

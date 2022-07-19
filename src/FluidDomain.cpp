@@ -9,80 +9,65 @@
 #include <openvdb/tools/ParticlesToLevelSet.h>
 #include <random>
 
-FluidSource::FluidSource(): spawning_region(openvdb::createLevelSet<openvdb::FloatGrid>()) {}
-FluidSource::FluidSource(LevelSet spawning_region, openvdb::Vec3d vel, int particle_generation_rate):
- _vel(vel), particle_generation_rate(particle_generation_rate), spawning_region(spawning_region) {}
-
-FluidSource::~FluidSource() {}
-
-void FluidSource::update(MacGrid &grid, ParticleSet &particle_set, float dt) {
-    float rate = dt * particle_generation_rate;
-    int spawn_counter = static_cast<int>(rate);
-    float probability_threshold = rate - static_cast<float>(spawn_counter);
-    std::random_device rd;  // Will be used to obtain a seed for the random number engine
-    std::mt19937 gen(rd()); // Standard mersenne_twister_engine seeded with rd()
-    std::uniform_real_distribution<> dis(-0.5, 0.5);
-
-    auto coordBBox = spawning_region.getActiveCoordBBox();
-    auto accessor = spawning_region.getAccessor();
-    LevelSet::Sampler sampler(accessor, spawning_region.getLevelSet()->transform());
-
-    MacGrid::Sampler vel_sampler(grid.velFront()->getAccessor(), spawning_region.getLevelSet()->transform());
-
-    assert(coordBBox.min() < coordBBox.max());
-    for (auto it = coordBBox.beginZYX(); it != coordBBox.endZYX(); ++it) {
-        auto cellCenterCoord = (*it);
-        if (accessor.getValue(cellCenterCoord) < 0) {
-            int grid_particles = spawn_counter;
-            if (dis(gen) < probability_threshold) grid_particles++;
-            while (grid_particles > 0) {
-                openvdb::Vec3d new_pos = cellCenterCoord.asVec3d() + openvdb::Vec3d(dis(gen), dis(gen), dis(gen));
-                if (spawning_region.valueInterpolatedI(sampler, new_pos) < 0) {
-                    openvdb::Vec3d new_vel = grid.velInterpolatedI(vel_sampler, new_pos) + _vel;
-                    Particle p(new_pos, new_vel);
-                    particle_set.addParticle(p);
-                    grid_particles--;
-                }
-            }
-        }
-    }
-}
-
-FluidDomain::FluidDomain(openvdb::FloatGrid::Ptr solid_level_set, openvdb::FloatGrid::Ptr fluid_level_set,
+FluidDomain::FluidDomain(openvdb::FloatGrid::Ptr boundary,
                          openvdb::math::Transform::Ptr i2w_transform, float voxel_size):
- _grid(i2w_transform),
- solid_level_set(solid_level_set), fluid_level_set(fluid_level_set), particle_set(i2w_transform),
- i2w_transform(i2w_transform), voxel_size(voxel_size) {
-    particle_set.setRadius(1.01f * voxel_size * sqrt(3) / 2.f);
-}
+ _grid(i2w_transform, voxel_size),
+ _solid_level_set(boundary),
+ _fluid_level_set(openvdb::createLevelSet<openvdb::FloatGrid>(voxel_size)),
+ particle_set(i2w_transform), _i2w_transform(i2w_transform), _voxel_size(voxel_size) {
+    _fluid_level_set.getLevelSet()->setTransform(_i2w_transform);
+    _solid_level_set.getLevelSet()->setTransform(_i2w_transform);
+ }
 FluidDomain::~FluidDomain() {}
 
 void FluidDomain::update(float dt) {
-    for (auto it = fluid_sources.begin(); it != fluid_sources.end(); ++it) { it->update(_grid, particle_set, dt); }
+    for (auto fluid_source : _fluid_sources) {
+        fluid_source->update(_grid, particle_set, dt);
+    }
 }
 
+void FluidDomain::addFluidSource(std::shared_ptr<FluidSource> fluid_source) { _fluid_sources.push_back(fluid_source); }
+
 void FluidDomain::removeFluidSource(int i) {
-    if (fluid_sources.size() >= i + 1) fluid_sources.erase(fluid_sources.begin() + i);
+    if (_fluid_sources.size() >= i + 1) _fluid_sources.erase(_fluid_sources.begin() + i);
+}
+
+void FluidDomain::addSolidObj(std::shared_ptr<SolidObject> solid_obj) { _solid_objs.push_back(solid_obj); }
+
+void FluidDomain::removeSolidObj(int i) {
+    if (_solid_objs.size() >= i + 1) _solid_objs.erase(_solid_objs.begin() + i);
+}
+std::shared_ptr<SolidObject> FluidDomain::getSolidObj(int i) {
+    return _solid_objs[i];
 }
 
 void FluidDomain::clearParticleSet() { particle_set.clear(); }
-void FluidDomain::clearFluidSources() { fluid_sources.clear(); }
+void FluidDomain::clearFluidSources() { _fluid_sources.clear(); }
+void FluidDomain::clearSolidObjs() { _solid_objs.clear(); }
 
 void FluidDomain::constructFluidLevelSetFromMarkerParticles() {
     if (particle_set.size() > 0) {
-        fluid_level_set.unionOfBalls(particle_set, voxel_size);
+        _fluid_level_set.unionOfBalls(particle_set, _voxel_size);
         auto fluidGridTopology = openvdb::createGrid<openvdb::MaskGrid>();
-        fluidGridTopology->tree().topologyUnion(fluid_level_set.getLevelSet()->tree());
-        fluid_level_set.getLevelSet()->tree().combineExtended(solid_level_set.getLevelSet()->deepCopy()->tree(),
-                                                              IntersectSolidFluidLevelSets::intersect, true);
-        fluid_level_set.getLevelSet()->tree().topologyIntersection(fluidGridTopology->tree());
+        fluidGridTopology->tree().topologyUnion(_fluid_level_set.getLevelSet()->tree());
+        _fluid_level_set.getLevelSet()->tree().combineExtended(_solid_level_set.getLevelSet()->deepCopy()->tree(),
+            // *openvdb::tools::csgUnionCopy(_solid.levelSet().getLevelSet()->deepCopy()->tree(),
+                                        //  solid_level_set.getLevelSet()->deepCopy()->tree()),
+            IntersectSolidFluidLevelSets::intersect, true);
+        _fluid_level_set.getLevelSet()->tree().topologyIntersection(fluidGridTopology->tree());
     }
 }
 
 void FluidDomain::advectParticles(float dt) {
-    auto cpt_grid = openvdb::tools::cpt(*solid_level_set.getLevelSet());
-    openvdb::tools::VelocityIntegrator<openvdb::Vec3dGrid, 1> rk_integrator(*_grid.velFront());
-    particle_set.advectAndEnsureOutsideObstacles(_grid.velFront(), cpt_grid, solid_level_set.getLevelSet(), dt);
-}
+    LevelSet solid_objs_level_set(openvdb::createLevelSet<openvdb::FloatGrid>(_voxel_size));
+    solid_objs_level_set.getLevelSet()->setTransform(_i2w_transform);
 
-void FluidDomain::addFluidSource(FluidSource fluid_source) { fluid_sources.push_back(fluid_source); }
+    for(auto solid_obj : _solid_objs) {
+        solid_objs_level_set.unionLevelSetInPlace(solid_obj->levelSet());
+    }
+
+    auto combined_solid_level_set = unionLevelSet(_solid_level_set, solid_objs_level_set);
+    auto cpt_grid = openvdb::tools::cpt(*combined_solid_level_set.getLevelSet());
+    openvdb::tools::VelocityIntegrator<openvdb::Vec3dGrid, 1> rk_integrator(*_grid.velFront());
+    particle_set.advectAndEnsureOutsideObstacles(_grid.velFront(), cpt_grid, combined_solid_level_set, dt);
+}

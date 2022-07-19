@@ -1,6 +1,6 @@
 #include "MacGrid.h"
 
-MacGrid::MacGrid(openvdb::math::Transform::Ptr i2w_transform): i2w_transform(i2w_transform) {
+MacGrid::MacGrid(openvdb::math::Transform::Ptr i2w_transform, float voxel_size): _i2w_transform(i2w_transform), _voxel_size(voxel_size) {
     _vel_front = openvdb::createGrid<openvdb::Vec3dGrid>(openvdb::Vec3d(0));
     _vel_front->setTransform(i2w_transform);
     _vel_front->setGridClass(openvdb::GRID_STAGGERED);
@@ -14,27 +14,27 @@ MacGrid::MacGrid(openvdb::math::Transform::Ptr i2w_transform): i2w_transform(i2w
     _vel_diff->setTransform(i2w_transform);
     _vel_diff->setGridClass(openvdb::GRID_STAGGERED);
 
-    valid_mask_u_front_buffer = openvdb::MaskGrid::create();
-    valid_mask_u_front_buffer->setTransform(i2w_transform);
-    valid_mask_u_back_buffer = openvdb::MaskGrid::create();
-    valid_mask_u_back_buffer->setTransform(i2w_transform);
+    _valid_mask_u_front_buffer = openvdb::MaskGrid::create();
+    _valid_mask_u_front_buffer->setTransform(i2w_transform);
+    _valid_mask_u_back_buffer = openvdb::MaskGrid::create();
+    _valid_mask_u_back_buffer->setTransform(i2w_transform);
 
-    valid_mask_v_front_buffer = openvdb::MaskGrid::create();
-    valid_mask_v_front_buffer->setTransform(i2w_transform);
-    valid_mask_v_back_buffer = openvdb::MaskGrid::create();
-    valid_mask_v_back_buffer->setTransform(i2w_transform);
+    _valid_mask_v_front_buffer = openvdb::MaskGrid::create();
+    _valid_mask_v_front_buffer->setTransform(i2w_transform);
+    _valid_mask_v_back_buffer = openvdb::MaskGrid::create();
+    _valid_mask_v_back_buffer->setTransform(i2w_transform);
 
-    valid_mask_w_front_buffer = openvdb::MaskGrid::create();
-    valid_mask_w_front_buffer->setTransform(i2w_transform);
-    valid_mask_w_back_buffer = openvdb::MaskGrid::create();
-    valid_mask_w_back_buffer->setTransform(i2w_transform);
+    _valid_mask_w_front_buffer = openvdb::MaskGrid::create();
+    _valid_mask_w_front_buffer->setTransform(i2w_transform);
+    _valid_mask_w_back_buffer = openvdb::MaskGrid::create();
+    _valid_mask_w_back_buffer->setTransform(i2w_transform);
 
-    u_weights = openvdb::createGrid<openvdb::FloatGrid>(1);
-    u_weights->setTransform(i2w_transform);
-    v_weights = openvdb::createGrid<openvdb::FloatGrid>(1);
-    v_weights->setTransform(i2w_transform);
-    w_weights = openvdb::createGrid<openvdb::FloatGrid>(1);
-    w_weights->setTransform(i2w_transform);
+    _u_weights = openvdb::createGrid<openvdb::FloatGrid>(0);
+    _u_weights->setTransform(i2w_transform);
+    _v_weights = openvdb::createGrid<openvdb::FloatGrid>(0);
+    _v_weights->setTransform(i2w_transform);
+    _w_weights = openvdb::createGrid<openvdb::FloatGrid>(0);
+    _w_weights->setTransform(i2w_transform);
 }
 
 MacGrid::~MacGrid() {}
@@ -51,7 +51,7 @@ void MacGrid::updateDiffBuffers() { _vel_diff->tree().combine2(_vel_front->tree(
 
 void MacGrid::swapVelocityBuffers() { _vel_front.swap(_vel_back); }
 void MacGrid::swapValidMasks() {
-    valid_mask_u_front_buffer.swap(valid_mask_u_back_buffer);
-    valid_mask_v_front_buffer.swap(valid_mask_v_back_buffer);
-    valid_mask_w_front_buffer.swap(valid_mask_w_back_buffer);
+    _valid_mask_u_front_buffer.swap(_valid_mask_u_back_buffer);
+    _valid_mask_v_front_buffer.swap(_valid_mask_v_back_buffer);
+    _valid_mask_w_front_buffer.swap(_valid_mask_w_back_buffer);
 }

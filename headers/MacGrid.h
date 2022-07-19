@@ -5,13 +5,14 @@
 
 //#include <glm/glm.hpp>
 
-    #include "util.h"
+#include "util.h"
 
-    #include <assert.h>
-    #include <iostream>
-    #include <memory>
-    #include <openvdb/openvdb.h>
-    #include <openvdb/tools/Interpolation.h>
+#include <assert.h>
+#include <iostream>
+#include <memory>
+#include <openvdb/openvdb.h>
+#include <openvdb/tools/Interpolation.h>
+
 // Some comments about the MAC Grid implementation
 // The int arguments in member functions refer to cell indices of the initial MacGrid.
 // As it is staggered, this means that for scalar values taken at the middle of the cell the value (i,j) is returned,
@@ -28,37 +29,34 @@
 
 class MacGrid {
 public:
-    MacGrid(openvdb::math::Transform::Ptr i2w_transform);
+    MacGrid(openvdb::math::Transform::Ptr i2w_transform, float voxel_size);
     ~MacGrid();
 
     typedef openvdb::Vec3dGrid::Accessor Accessor;
     typedef openvdb::tools::GridSampler<openvdb::Vec3dGrid::Accessor, openvdb::tools::StaggeredBoxSampler> Sampler;
 
+    void updatePreviousVelocityBuffer();
+    void updateDiffBuffers();
+
+    void swapVelocityBuffers();
+    void swapValidMasks();
+
+    // Getters
     inline openvdb::Vec3dGrid::Ptr velFront() { return _vel_front; }
     inline openvdb::Vec3dGrid::Ptr velBack() { return _vel_back; }
     inline openvdb::Vec3dGrid::Ptr velPrev() { return _vel_prev; }
     inline openvdb::Vec3dGrid::Ptr velDiff() { return _vel_diff; }
-    inline openvdb::MaskGrid::Ptr validUFront() { return valid_mask_u_front_buffer; };
-    inline openvdb::MaskGrid::Ptr validUBack() { return valid_mask_u_back_buffer; };
-    inline openvdb::MaskGrid::Ptr validVFront() { return valid_mask_v_front_buffer; };
-    inline openvdb::MaskGrid::Ptr validVBack() { return valid_mask_v_back_buffer; };
-    inline openvdb::MaskGrid::Ptr validWFront() { return valid_mask_w_front_buffer; };
-    inline openvdb::MaskGrid::Ptr validWBack() { return valid_mask_w_back_buffer; };
+    inline openvdb::MaskGrid::Ptr validUFront() { return _valid_mask_u_front_buffer; };
+    inline openvdb::MaskGrid::Ptr validUBack() { return _valid_mask_u_back_buffer; };
+    inline openvdb::MaskGrid::Ptr validVFront() { return _valid_mask_v_front_buffer; };
+    inline openvdb::MaskGrid::Ptr validVBack() { return _valid_mask_v_back_buffer; };
+    inline openvdb::MaskGrid::Ptr validWFront() { return _valid_mask_w_front_buffer; };
+    inline openvdb::MaskGrid::Ptr validWBack() { return _valid_mask_w_back_buffer; };
 
-    inline openvdb::FloatGrid::Ptr uWeights() { return u_weights; };
-    inline openvdb::FloatGrid::Ptr vWeights() { return v_weights; };
-    inline openvdb::FloatGrid::Ptr wWeights() { return w_weights; };
+    inline openvdb::FloatGrid::Ptr uWeights() { return _u_weights; };
+    inline openvdb::FloatGrid::Ptr vWeights() { return _v_weights; };
+    inline openvdb::FloatGrid::Ptr wWeights() { return _w_weights; };
     
-
-    inline void setValidUBack(openvdb::MaskGrid::Ptr mask) { valid_mask_u_back_buffer = mask; }
-    inline void setValidWBack(openvdb::MaskGrid::Ptr mask) { valid_mask_w_back_buffer = mask; }
-    inline void setValidVBack(openvdb::MaskGrid::Ptr mask) { valid_mask_v_back_buffer = mask; }
-    inline void setVelBack(openvdb::Vec3dGrid::Ptr vel_back) { _vel_back = vel_back; }
-
-    void updatePreviousVelocityBuffer();
-    void updateDiffBuffers();
-
-    // Getters
     inline openvdb::Vec3d velHalfIndexed(Accessor &accessor, openvdb::Coord coord) const { return accessor.getValue(coord); };
     inline openvdb::Vec3d velHalfIndexed(Accessor &accessor, int k, int j, int i) const {
         return accessor.getValue(openvdb::Coord(k, j, i));
@@ -79,48 +77,29 @@ public:
         return sampler.wsSample(openvdb::Vec3d(x, y, z));
     };
 
-    // glm::dmat2 computeVelocityGradientMatrix(int i, int j);
+    inline float voxelSize() { return _voxel_size; };
 
     // Setters
+    inline void setValidUBack(openvdb::MaskGrid::Ptr mask) { _valid_mask_u_back_buffer = mask; }
+    inline void setValidWBack(openvdb::MaskGrid::Ptr mask) { _valid_mask_w_back_buffer = mask; }
+    inline void setValidVBack(openvdb::MaskGrid::Ptr mask) { _valid_mask_v_back_buffer = mask; }
+    inline void setVelBack(openvdb::Vec3dGrid::Ptr vel_back) { _vel_back = vel_back; }
+
     inline void setVelHalfIndexed(Accessor &accessor, openvdb::Coord coord, openvdb::Vec3d vel) { accessor.setValue(coord, vel); };
 
     inline void setVelHalfIndexed(Accessor &accessor, int k, int j, int i, openvdb::Vec3d vel) {
         accessor.setValue(openvdb::Coord(k, j, i), vel);
     };
 
-    inline void setVelXHalfIndexed(Accessor &accessor, openvdb::Coord coord, double vel) {
+    inline void setVelOneDimHalfIndexed(Accessor &accessor, openvdb::Coord coord, double vel, int idx) {
         openvdb::Vec3d value = accessor.getValue(coord);
-        value[0] = vel;
+        value[idx] = vel;
         accessor.setValue(coord, value);
     };
 
-    inline void setVelXHalfIndexed(Accessor &accessor, int k, int j, int i, double vel) {
+    inline void setVelOneDimHalfIndexed(Accessor &accessor, int k, int j, int i, double vel, int idx) {
         openvdb::Vec3d value = accessor.getValue(openvdb::Coord(k, j, i));
-        value[0] = vel;
-        accessor.setValue(openvdb::Coord(k, j, i), value);
-    };
-
-    inline void setVelYHalfIndexed(Accessor &accessor, openvdb::Coord coord, double vel) {
-        openvdb::Vec3d value = accessor.getValue(coord);
-        value[1] = vel;
-        accessor.setValue(coord, value);
-    };
-
-    inline void setVelYHalfIndexed(Accessor &accessor, int k, int j, int i, double vel) {
-        openvdb::Vec3d value = accessor.getValue(openvdb::Coord(k, j, i));
-        value[1] = vel;
-        accessor.setValue(openvdb::Coord(k, j, i), value);
-    };
-
-    inline void setVelZHalfIndexed(Accessor &accessor, openvdb::Coord coord, double vel) {
-        openvdb::Vec3d value = accessor.getValue(coord);
-        value[2] = vel;
-        accessor.setValue(coord, value);
-    };
-
-    inline void setVelZHalfIndexed(Accessor &accessor, int k, int j, int i, double vel) {
-        openvdb::Vec3d value = accessor.getValue(openvdb::Coord(k, j, i));
-        value[2] = vel;
+        value[idx] = vel;
         accessor.setValue(openvdb::Coord(k, j, i), value);
     };
 
@@ -226,7 +205,7 @@ public:
 
     inline void addToVelInterpolated(Accessor &accessor, float x, float y, float z, openvdb::Vec3d value) {
         // Calculate indices
-        auto isPoint = i2w_transform->worldToIndex(openvdb::Vec3d(x, y, z));
+        auto isPoint = _i2w_transform->worldToIndex(openvdb::Vec3d(x, y, z));
         const int i = isPoint[0];
         const int j = isPoint[1];
         const int k = isPoint[2];
@@ -278,7 +257,7 @@ public:
 
     inline void setVelInterpolated(Accessor &accessor, float x, float y, float z, openvdb::Vec3d value) {
         // Calculate indices
-        auto isPoint = i2w_transform->worldToIndex(openvdb::Vec3d(x, y, z));
+        auto isPoint = _i2w_transform->worldToIndex(openvdb::Vec3d(x, y, z));
         const int i = isPoint[0];
         const int j = isPoint[1];
         const int k = isPoint[2];
@@ -318,25 +297,26 @@ public:
         accessor.setValue(openvdb::Coord(i + 1, j + 1, k + 1), value_111);
     };
 
-    void swapVelocityBuffers();
-    void swapValidMasks();
-
 private:
     openvdb::Vec3dGrid::Ptr _vel_front;
     openvdb::Vec3dGrid::Ptr _vel_back;
     openvdb::Vec3dGrid::Ptr _vel_prev;
     openvdb::Vec3dGrid::Ptr _vel_diff;
-    openvdb::math::Transform::Ptr i2w_transform;
-    openvdb::MaskGrid::Ptr valid_mask_u_front_buffer;
-    openvdb::MaskGrid::Ptr valid_mask_u_back_buffer;
-    openvdb::MaskGrid::Ptr valid_mask_v_front_buffer;
-    openvdb::MaskGrid::Ptr valid_mask_v_back_buffer;
-    openvdb::MaskGrid::Ptr valid_mask_w_front_buffer;
-    openvdb::MaskGrid::Ptr valid_mask_w_back_buffer;
+    openvdb::math::Transform::Ptr _i2w_transform;
+    openvdb::MaskGrid::Ptr _valid_mask_u_front_buffer;
+    openvdb::MaskGrid::Ptr _valid_mask_u_back_buffer;
+    openvdb::MaskGrid::Ptr _valid_mask_v_front_buffer;
+    openvdb::MaskGrid::Ptr _valid_mask_v_back_buffer;
+    openvdb::MaskGrid::Ptr _valid_mask_w_front_buffer;
+    openvdb::MaskGrid::Ptr _valid_mask_w_back_buffer;
 
-    openvdb::FloatGrid::Ptr u_weights;
-    openvdb::FloatGrid::Ptr v_weights;
-    openvdb::FloatGrid::Ptr w_weights;
+    // Solid face area weights.
+    // 1 - <value> to get the fluid fraction
+    openvdb::FloatGrid::Ptr _u_weights;
+    openvdb::FloatGrid::Ptr _v_weights;
+    openvdb::FloatGrid::Ptr _w_weights;
+
+    float _voxel_size;
 };
 
 #endif
