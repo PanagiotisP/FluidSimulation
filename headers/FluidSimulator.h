@@ -31,9 +31,17 @@ private:
     // Add external forces like gravity
     void add_forces(FluidDomain &domain, float dt);
     void extrapolate_data(FluidDomain &domain, int iterations_n);
+    void index_fluid_cells(FluidDomain &domain, openvdb::Int32Grid::Ptr fluid_indices);
+    void prepare_pressure_solve(FluidDomain &domain, openvdb::Int32Grid::Ptr fluid_indices);
+    void solve_pressure_divirgence(FluidDomain &domain, openvdb::Int32Grid::Ptr fluid_indices, float dt);
     void constrain_velocity(FluidDomain &domain);
     void constrain_velocity(FluidDomain &domain, SolidObject solidObject);
-    void project(FluidDomain &domain, float dt);
+    void compute_face_fractions(FluidDomain &domain);
+    Eigen::VectorXd compute_pressure_divirgence_constraint(FluidDomain &domain,
+                                                           openvdb::Int32Grid::Accessor &fluid_indices_accessor,
+                                                           int system_size, float dt);
+    void project_divirgence_constraint(FluidDomain &domain, openvdb::Int32Grid::Accessor &fluid_indices_accessor,
+                                       Eigen::VectorXd &pressure_grid, float dt);
     // Apply incrompressibility constraint
     // Semi-Lagrangian advection
     void advect(FluidDomain &domain, float dt);
