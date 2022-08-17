@@ -116,7 +116,8 @@ void SolidObject::compute_face_fractions() {
     auto inside_mask = openvdb::tools::extractEnclosedRegion(*_level_set.getLevelSet(), 0);
     inside_mask->tree().topologyUnion(border_mask->tree());
 
-    openvdb::tools::dilateActiveValues(inside_mask->tree(), 1, openvdb::tools::NN_FACE_EDGE_VERTEX, openvdb::tools::TilePolicy::EXPAND_TILES);
+    openvdb::tools::dilateActiveValues(inside_mask->tree(), 1, openvdb::tools::NN_FACE_EDGE_VERTEX,
+                                       openvdb::tools::TilePolicy::EXPAND_TILES);
 
     _u_weights->tree().topologyUnion(inside_mask->tree());
     _v_weights->tree().topologyUnion(inside_mask->tree());
@@ -126,6 +127,7 @@ void SolidObject::compute_face_fractions() {
     _v_weights->tree().voxelizeActiveTiles();
     _w_weights->tree().voxelizeActiveTiles();
 
+    // This resampling might be a very very bad low pass filter, destroying information
     openvdb::tree::IteratorRange<openvdb::BoolGrid::ValueOnCIter> range(inside_mask->cbeginValueOn());
     tbb::parallel_for(range, [&](openvdb::tree::IteratorRange<openvdb::BoolGrid::ValueOnCIter> range) {
         auto targetAccessor = resampledSolidLevelSet->getAccessor();

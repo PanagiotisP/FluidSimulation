@@ -4,8 +4,8 @@
 
 #include <memory>
 #include <openvdb/openvdb.h>
-#include <vector>
 #include <openvdb/tools/VelocityFields.h>
+#include <vector>
 
 class LevelSet;
 
@@ -58,9 +58,9 @@ public:
     inline void addParticle(const Particle &p) {
         _particles.push_back(p);
         _minRadius = min(_minRadius, p.radius());
-        };
+    };
     inline void pop_back() { _particles.pop_back(); };
-    inline void removeParticle(ParticleSet::iterator p) {_particles.erase(p);};
+    inline void removeParticle(ParticleSet::iterator p) { _particles.erase(p); };
 
     inline ParticleSet::iterator begin() { return _particles.begin(); };
     inline ParticleSet::iterator end() { return _particles.end(); };

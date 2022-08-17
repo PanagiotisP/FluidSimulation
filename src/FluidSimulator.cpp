@@ -50,13 +50,13 @@ void FluidSimulator::print_velocity_field(MacGrid &grid, const char *variable_na
     std::cout << variable_name;
     // assert(bbox.min() < bbox.max());
     // for (int i = _bbox.min()[0]; i < _bbox.max()[0]; ++i) {
-    for (int i = 14; i < 17; ++i) {
+    for (int i = 0; i < 8; ++i) {
         std::cout << "\n" << i << std::endl;
         // for (int j = _bbox.max()[1]; j >= _bbox.min()[1]; --j) {
-        for (int j = 17; j >= 13; --j) {
+        for (int j = 7; j >= 0; --j) {
             std::cout << std::endl;
             // for (int k = _bbox.min()[2]; k < _bbox.max()[2]; ++k) {
-            for (int k = 15; k < 18; ++k) {
+            for (int k = 0; k < 8; ++k) {
                 std::cout << "[" << grid.velHalfIndexed(accessor, i, j, k)[0] << ", "
                           << grid.velHalfIndexed(accessor, i, j, k)[1] << ", "
                           << grid.velHalfIndexed(accessor, i, j, k)[2] << "]"
@@ -86,7 +86,8 @@ void FluidSimulator::transfer_from_particles_to_grid(FluidDomain &domain) {
     // Create a point mask to pre-allocate back velocity and weight grids, in order to perform parallel writes.
     auto pointMask = openvdb::tools::createPointMask(domain.particleSet(), grid.velBack()->transform());
     // Dilate the point mask to cover the particles' contribution, as determined by the kernel function
-    openvdb::tools::dilateActiveValues(pointMask->tree(), 2, openvdb::tools::NN_FACE_EDGE_VERTEX);
+    openvdb::tools::dilateActiveValues(pointMask->tree(), 2, openvdb::tools::NN_FACE_EDGE_VERTEX,
+                                       openvdb::tools::TilePolicy::EXPAND_TILES);
 
     grid.velBack()->tree().topologyUnion(pointMask->tree());
     grid.velBack()->tree().voxelizeActiveTiles();
@@ -329,8 +330,7 @@ void FluidSimulator::advance_flip_pic(FluidDomain &domain, float t_frame, float 
         t_start = high_resolution_clock::now();
         domain.constructFluidLevelSetFromMarkerParticles();
         t_end = high_resolution_clock::now();
-        auto constructFluidLevelSetFromMarkerParticles_duration =
-            duration_cast<milliseconds>(t_end - t_start);
+        auto constructFluidLevelSetFromMarkerParticles_duration = duration_cast<milliseconds>(t_end - t_start);
 
         // Reseeding (should probably not be called every frame but with a set interval)
         t_start = high_resolution_clock::now();
@@ -343,8 +343,7 @@ void FluidSimulator::advance_flip_pic(FluidDomain &domain, float t_frame, float 
         t_start = high_resolution_clock::now();
         transfer_from_particles_to_grid(domain);
         t_end = high_resolution_clock::now();
-        auto transfer_from_particles_to_grid_duration =
-            duration_cast<milliseconds>(t_end - t_start);
+        auto transfer_from_particles_to_grid_duration = duration_cast<milliseconds>(t_end - t_start);
         print_velocity_field(domain.grid(), "after transfer");
 
         // Pre-allocate valid grids for the extrapolation function
@@ -375,7 +374,7 @@ void FluidSimulator::advance_flip_pic(FluidDomain &domain, float t_frame, float 
         domain.grid().updatePreviousVelocityBuffer();
 
         // Eulerian grid part START
-        
+
         // Add body forices
         t_start = high_resolution_clock::now();
         add_forces(domain, timestep);
@@ -427,8 +426,7 @@ void FluidSimulator::advance_flip_pic(FluidDomain &domain, float t_frame, float 
         t_start = high_resolution_clock::now();
         transfer_from_grid_to_particles(domain, flip_pic_ratio);
         t_end = high_resolution_clock::now();
-        auto transfer_from_grid_to_particles_duration =
-            duration_cast<milliseconds>(t_end - t_start);
+        auto transfer_from_grid_to_particles_duration = duration_cast<milliseconds>(t_end - t_start);
 
         // Advect particles and solids based on the calculated velocities
         t_start = high_resolution_clock::now();
@@ -456,11 +454,13 @@ void FluidSimulator::advance_flip_pic(FluidDomain &domain, float t_frame, float 
 
 float FluidSimulator::compute_cfl(FluidDomain &domain) {
     auto &grid = domain.grid();
-    
+
     openvdb::Vec3d minVector, maxVector;
-    
     // Find max velocity
     grid.velFront()->evalMinMax(minVector, maxVector);
+    for (auto solidObject : domain.solidObjs()) {
+        maxVector = std::max(maxVector, openvdb::math::Abs(solidObject->velTranslational()));
+    }
     return domain.voxelSize() / (max(maxVector[0], maxVector[1], maxVector[2]) + epsilon);
 }
 
@@ -508,7 +508,8 @@ void FluidSimulator::solve_pressure_divirgence(FluidDomain &domain, openvdb::Int
         return;
     }
 
-    Eigen::VectorXd pressure_grid_divirgence_constraint(compute_pressure_divirgence_constraint(domain, fluid_indices_accessor, system_size, dt));
+    Eigen::VectorXd pressure_grid_divirgence_constraint(
+        compute_pressure_divirgence_constraint(domain, fluid_indices_accessor, system_size, dt));
 
     project_divirgence_constraint(domain, fluid_indices_accessor, pressure_grid_divirgence_constraint, dt);
 }
@@ -568,7 +569,8 @@ void FluidSimulator::compute_face_fractions(FluidDomain &domain) {
         auto border_mask = openvdb::tools::extractIsosurfaceMask(*domain.fluidLevelSet().getLevelSet(), 0);
         border_mask->tree().topologyUnion(
             openvdb::tools::extractEnclosedRegion(*domain.fluidLevelSet().getLevelSet(), 0)->tree());
-        openvdb::tools::dilateActiveValues(border_mask->tree(), 1, openvdb::tools::NN_FACE_EDGE_VERTEX, openvdb::tools::TilePolicy::EXPAND_TILES);
+        openvdb::tools::dilateActiveValues(border_mask->tree(), 1, openvdb::tools::NN_FACE_EDGE_VERTEX,
+                                           openvdb::tools::TilePolicy::EXPAND_TILES);
 
         uWeights->tree().topologyUnion(border_mask->tree());
         vWeights->tree().topologyUnion(border_mask->tree());
@@ -613,12 +615,15 @@ void FluidSimulator::compute_face_fractions(FluidDomain &domain) {
     }
 
     // Constrain the face area fraction values
-    openvdb::tools::foreach (grid.uWeights()->beginValueAll(),
-                             [](const openvdb::FloatGrid::ValueAllIter &iter) { iter.setValue(clamp(iter.getValue(), 0.f, 1.f)); });
-    openvdb::tools::foreach (grid.vWeights()->beginValueAll(),
-                             [](const openvdb::FloatGrid::ValueAllIter &iter) { iter.setValue(clamp(iter.getValue(), 0.f, 1.f)); });
-    openvdb::tools::foreach (grid.wWeights()->beginValueAll(),
-                             [](const openvdb::FloatGrid::ValueAllIter &iter) { iter.setValue(clamp(iter.getValue(), 0.f, 1.f)); });
+    openvdb::tools::foreach (grid.uWeights()->beginValueAll(), [](const openvdb::FloatGrid::ValueAllIter &iter) {
+        iter.setValue(clamp(iter.getValue(), 0.f, 1.f));
+    });
+    openvdb::tools::foreach (grid.vWeights()->beginValueAll(), [](const openvdb::FloatGrid::ValueAllIter &iter) {
+        iter.setValue(clamp(iter.getValue(), 0.f, 1.f));
+    });
+    openvdb::tools::foreach (grid.wWeights()->beginValueAll(), [](const openvdb::FloatGrid::ValueAllIter &iter) {
+        iter.setValue(clamp(iter.getValue(), 0.f, 1.f));
+    });
 
     auto t_end = high_resolution_clock::now();
     auto weights_duration = duration_cast<milliseconds>(t_end - t_start);
@@ -690,7 +695,8 @@ Eigen::VectorXd FluidSimulator::compute_pressure_divirgence_constraint(
     auto solidAccessor = domain.solidLevelSet().getAccessor();
 
     auto mask = openvdb::tools::createPointMask(domain.particleSet(), *domain._i2w_transform);
-    openvdb::tools::dilateActiveValues(mask->tree(), 2, openvdb::tools::NN_FACE_EDGE_VERTEX, openvdb::tools::TilePolicy::EXPAND_TILES);
+    openvdb::tools::dilateActiveValues(mask->tree(), 2, openvdb::tools::NN_FACE_EDGE_VERTEX,
+                                       openvdb::tools::TilePolicy::EXPAND_TILES);
 
     openvdb::tree::IteratorRange<openvdb::MaskGrid::ValueOnCIter> fluidRange(mask->cbeginValueOn());
 
@@ -826,10 +832,10 @@ Eigen::VectorXd FluidSimulator::compute_pressure_divirgence_constraint(
     Eigen::VectorXd pressure_grid(system_size);
     solver.compute(alpha_matrix);
     pressure_grid = solver.solve(rhs);
-    #ifdef PRINT
+#ifdef PRINT
     std::cout << rhs << std::endl;
     std::cout << pressure_grid << std::endl;
-    #endif
+#endif
     std::cout << "\n" << solver.error() << " " << solver.info() << " " << solver.iterations() << "\n" << std::endl;
     return pressure_grid;
 }
@@ -871,7 +877,8 @@ Eigen::VectorXd FluidSimulator::compute_pressure_density_constraint(
     auto solidAccessor = domain.solidLevelSet().getAccessor();
 
     auto mask = openvdb::tools::createPointMask(domain.particleSet(), *domain._i2w_transform);
-    openvdb::tools::dilateActiveValues(mask->tree(), 2, openvdb::tools::NN_FACE_EDGE_VERTEX, openvdb::tools::TilePolicy::EXPAND_TILES);
+    openvdb::tools::dilateActiveValues(mask->tree(), 2, openvdb::tools::NN_FACE_EDGE_VERTEX,
+                                       openvdb::tools::TilePolicy::EXPAND_TILES);
 
     openvdb::tree::IteratorRange<openvdb::MaskGrid::ValueOnCIter> range(mask->cbeginValueOn());
 
@@ -1019,7 +1026,6 @@ Eigen::VectorXd FluidSimulator::compute_pressure_density_constraint(
     // #endif
     std::cout << "\n" << solver.error() << " " << solver.info() << " " << solver.iterations() << "\n" << std::endl;
     return pressure_grid;
-
 }
 
 
@@ -1178,7 +1184,7 @@ void FluidSimulator::project_density_constraint(FluidDomain &domain,
         // std::cout << dx << std::endl;
         displacement_grid_accessor.setValue(coord, dx);
     }
-    #ifdef PRINT
+#ifdef PRINT
     std::cout << std::endl;
     for (int i = 0; i < 8; ++i) {
         std::cout << i << std::endl;
@@ -1190,14 +1196,13 @@ void FluidSimulator::project_density_constraint(FluidDomain &domain,
         }
     }
     std::cout << std::endl;
-    #endif
+#endif
     // for (auto solidObj : domain.solidObjs()) {
     //     auto new_solid_vel_vector = solidObj->combinedVelocityVector()
     //                                 + dt * solidObj->massMatrixInverse() * solidObj->jMatrix() * pressure_grid;
     //     // Eigen::Vector<double, 6> force = solidObj->massMatrixInverse() * solidObj->jMatrix() * pressure_grid;
     //     solidObj->setVelocityVector(new_solid_vel_vector);
     // }
-
 }
 
 void FluidSimulator::constrain_velocity(FluidDomain &domain) {
