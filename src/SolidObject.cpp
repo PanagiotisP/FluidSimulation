@@ -101,7 +101,9 @@ void SolidObject::update_positions_orientations(float dt) {
 }
 
 void SolidObject::compute_face_fractions() {
-
+    _u_weights->clear();
+    _v_weights->clear();
+    _w_weights->clear();
     // Resample solid level set to get values at bottom left corner of voxels
     auto resampledSolidLevelSet = openvdb::createLevelSet<openvdb::FloatGrid>(_level_set.getLevelSet()->voxelSize()[0]);
     openvdb::tools::GridTransformer transformer(
