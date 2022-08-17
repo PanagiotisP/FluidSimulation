@@ -28,6 +28,7 @@
 // #define PRINT
 #define VERTICAL_PLANE true
 #define GATHER_TRANSFER
+#define DENSITY_CONSTRAINT_PPE
 const float epsilon = 10e-37;
 
 float liquid_bound_x0, liquid_bound_x1;
@@ -131,6 +132,22 @@ void FluidSimulator::transfer_from_grid_to_particles(FluidDomain &domain, float 
             openvdb::Vec3d flip_vel = p.vel() + vel_diff_sampler.isSample(p.pos());
 
             p.setVelocity(pic_vel * (1 - flip_pic_ratio) + flip_vel * flip_pic_ratio);
+        }
+    });
+}
+
+void FluidSimulator::apply_particle_displacements(FluidDomain &domain) {
+    MacGrid &grid = domain.grid();
+
+    tbb::parallel_for(tbb::blocked_range<int>(0, domain.particleSet().size(), 1), [&](tbb::blocked_range<int> range) {
+        MacGrid::Sampler displacement_sampler(grid.displacementGrid()->getAccessor(),
+                                              grid.displacementGrid()->transform());
+
+        for (int i = range.begin(); i < range.end(); ++i) {
+            auto &p = domain.particleSet()[i];
+            openvdb::Vec3d displacement = displacement_sampler.isSample(p.pos());
+
+            p.setPosition(p.pos() + displacement);
         }
     });
 }
@@ -376,7 +393,14 @@ void FluidSimulator::advance_flip_pic(FluidDomain &domain, float t_frame, float 
         t_end = high_resolution_clock::now();
         auto project_duration = duration_cast<milliseconds>(t_end - t_start);
         print_velocity_field(domain.grid(), "after project");
-        
+
+#ifdef DENSITY_CONSTRAINT_PPE
+        // domain.constructFluidLevelSetFromMarkerParticles();
+        // fluid_indices->clear();
+        // prepare_pressure_solve(domain, fluid_indices);
+        solve_pressure_density(domain, fluid_indices, timestep);
+#endif
+
         // Extrapolate and constrain velocities again
         t_start = high_resolution_clock::now();
         extrapolate_data(domain, 2);
@@ -409,6 +433,10 @@ void FluidSimulator::advance_flip_pic(FluidDomain &domain, float t_frame, float 
         // Advect particles and solids based on the calculated velocities
         t_start = high_resolution_clock::now();
         domain.advectParticles(timestep);
+
+#ifdef DENSITY_CONSTRAINT_PPE
+        apply_particle_displacements(domain);
+#endif
         for (auto solidObj : domain.solidObjs()) {
             solidObj->update_positions_orientations(timestep);
         }
@@ -466,7 +494,10 @@ void FluidSimulator::prepare_pressure_solve(FluidDomain &domain, openvdb::Int32G
 
     compute_face_fractions(domain);
 
+    grid.densityGrid()->clear();
+    compute_density(domain);
 }
+
 void FluidSimulator::solve_pressure_divirgence(FluidDomain &domain, openvdb::Int32Grid::Ptr fluid_indices, float dt) {
     auto &grid = domain.grid();
 
@@ -481,22 +512,23 @@ void FluidSimulator::solve_pressure_divirgence(FluidDomain &domain, openvdb::Int
 
     project_divirgence_constraint(domain, fluid_indices_accessor, pressure_grid_divirgence_constraint, dt);
 }
-        }
-    }
+
+void FluidSimulator::solve_pressure_density(FluidDomain &domain, openvdb::Int32Grid::Ptr fluid_indices, float dt) {
+    auto &grid = domain.grid();
+
+    auto fluid_indices_accessor = fluid_indices->getAccessor();
+    int system_size = fluid_indices->activeVoxelCount();
 
     if (system_size == 0) {
         return;
     }
 
-    alpha_matrix.resize(system_size, system_size);
-    alpha_matrix.reserve(Eigen::VectorXi::Constant(system_size, 7));
-    
-    for (auto solidObj : domain.solidObjs()) {
-        solidObj->jMatrix().resize(6, system_size);
-        solidObj->jMatrix().reserve(Eigen::VectorXi::Constant(6, system_size));
-    }
-    
-    Eigen::VectorXd rhs(system_size);
+    Eigen::VectorXd pressure_grid_density_constraint(
+        compute_pressure_density_constraint(domain, fluid_indices_accessor, system_size, dt));
+
+    project_density_constraint(domain, fluid_indices_accessor, pressure_grid_density_constraint, dt);
+}
+
 
 void FluidSimulator::compute_face_fractions(FluidDomain &domain) {
     auto &grid = domain.grid();
@@ -590,6 +622,39 @@ void FluidSimulator::compute_face_fractions(FluidDomain &domain) {
 
     auto t_end = high_resolution_clock::now();
     auto weights_duration = duration_cast<milliseconds>(t_end - t_start);
+}
+
+void FluidSimulator::compute_density(FluidDomain domain) {
+    auto &grid = domain.grid();
+    auto border_mask = openvdb::tools::createPointMask(domain.particleSet(), *domain._i2w_transform);
+    openvdb::tools::dilateActiveValues(border_mask->tree(), 1, openvdb::tools::NN_FACE_EDGE_VERTEX,
+                                       openvdb::tools::TilePolicy::EXPAND_TILES);
+
+    openvdb::tree::IteratorRange<openvdb::MaskGrid::ValueOnCIter> fluidRange(border_mask->cbeginValueOn());
+
+    // Compute actual density of each cell
+    // Zero out radius for the atlas creation as we care only for the particles whose center lies inside a voxel
+    domain.particleSet().setZeroRadius(true);
+
+    auto p_atlas = openvdb::tools::ParticleAtlas<openvdb::tools::PointIndexGrid>::create<ParticleSet>(
+        domain.particleSet(), domain.voxelSize());
+
+    // Create a point mask to pre-allocate density grid, in order to perform parallel writes.
+    auto pointMask = openvdb::tools::createPointMask(domain.particleSet(), grid.velBack()->transform());
+    // Dilate the point mask to cover the particles' contribution, as determined by the kernel function
+    openvdb::tools::dilateActiveValues(pointMask->tree(), 2, openvdb::tools::NN_FACE_EDGE_VERTEX,
+                                       openvdb::tools::TilePolicy::EXPAND_TILES);
+
+    grid.densityGrid()->tree().topologyUnion(pointMask->tree());
+    grid.densityGrid()->tree().voxelizeActiveTiles();
+
+    if (pointMask->activeVoxelCount() != 0) {
+        auto bbox = pointMask->evalActiveVoxelBoundingBox();
+        tbb::parallel_for(fluidRange, DensityCalculator(domain, p_atlas, bbox, grid.densityGrid()));
+    }
+
+    // Re-enable particles' radii
+    domain.particleSet().setZeroRadius(false);
 }
 
 Eigen::VectorXd FluidSimulator::compute_pressure_divirgence_constraint(
@@ -768,21 +833,195 @@ Eigen::VectorXd FluidSimulator::compute_pressure_divirgence_constraint(
     std::cout << "\n" << solver.error() << " " << solver.info() << " " << solver.iterations() << "\n" << std::endl;
     return pressure_grid;
 }
+
+Eigen::VectorXd FluidSimulator::compute_pressure_density_constraint(
+    FluidDomain &domain, openvdb::Int32Grid::Accessor &fluid_indices_accessor, int system_size, float dt) {
+    auto &grid = domain.grid();
+    // Solver of linear system
+    Eigen::setNbThreads(8);
+    Eigen::ConjugateGradient<Eigen::SparseMatrix<double, 1 >, Eigen::UpLoType::Lower | Eigen::UpLoType::Upper > solver;
+    solver.setTolerance(1e-15);
+
+    // Laplacian matrix
+    Eigen::SparseMatrix<double, 1> alpha_matrix;
+
+    alpha_matrix.resize(system_size, system_size);
+    alpha_matrix.reserve(Eigen::VectorXi::Constant(system_size, 7));
+
+    // for (auto solidObj : domain.solidObjs()) {
+    //     solidObj->jMatrix().resize(6, system_size);
+    //     solidObj->jMatrix().reserve(Eigen::VectorXi::Constant(6, system_size));
+    // }
+
+    Eigen::VectorXd rhs(system_size);
+
+    auto t_start = high_resolution_clock::now();
+
+    auto solidBbox = domain.solidLevelSet().getActiveCoordBBox();
+    auto u_weights_accessor = grid.uWeights()->getAccessor();
+    auto v_weights_accessor = grid.vWeights()->getAccessor();
+    auto w_weights_accessor = grid.wWeights()->getAccessor();
+    auto vel_front_accessor = grid.velFront()->getAccessor();
+    auto density_grid_accessor = grid.densityGrid()->getAccessor();
+    auto u_fluid_weights_accessor = grid.uFluidWeights()->getAccessor();
+    auto v_fluid_weights_accessor = grid.vFluidWeights()->getAccessor();
+    auto w_fluid_weights_accessor = grid.wFluidWeights()->getAccessor();
+
+    auto fluidAccessor = domain.fluidLevelSet().getAccessor();
+    auto solidAccessor = domain.solidLevelSet().getAccessor();
+
+    auto mask = openvdb::tools::createPointMask(domain.particleSet(), *domain._i2w_transform);
+    openvdb::tools::dilateActiveValues(mask->tree(), 2, openvdb::tools::NN_FACE_EDGE_VERTEX, openvdb::tools::TilePolicy::EXPAND_TILES);
+
+    openvdb::tree::IteratorRange<openvdb::MaskGrid::ValueOnCIter> range(mask->cbeginValueOn());
+
+    float scale = dt / (FluidDomain::density * sqr(domain.voxelSize()));
+
+
+    // Build the system's matrices and right hand side
+    for (; range; ++range) {
+        auto coord = range.iterator().getCoord();
+
+        if (fluid_indices_accessor.getValue(coord) != -1) {
+            int idx = fluid_indices_accessor.getValue(coord);
+            rhs[idx] = 0;
+            double diagonal = 0;
+            double theta = 0;
+            double term;
+
+            // These phi values are used to determine in which class the neighbouring cells lie (empty, fluid, solid)
+            float phi_i_j_k = fluidAccessor.getValue(coord);
+            float phi_i_minus_1_j_k = fluidAccessor.getValue(coord.offsetBy(-1, 0, 0));
+            float phi_i_j_minus_1_k = fluidAccessor.getValue(coord.offsetBy(0, -1, 0));
+            float phi_i_j_k_minus_1 = fluidAccessor.getValue(coord.offsetBy(0, 0, -1));
+            float phi_i_plus_1_j_k = fluidAccessor.getValue(coord.offsetBy(1, 0, 0));
+            float phi_i_j_plus_1_k = fluidAccessor.getValue(coord.offsetBy(0, 1, 0));
+            float phi_i_j_k_plus_1 = fluidAccessor.getValue(coord.offsetBy(0, 0, 1));
+
+            float solid_phi_i_j_k = solidAccessor.getValue(coord);
+            float solid_phi_i_minus_1_j_k = solidAccessor.getValue(coord.offsetBy(-1, 0, 0));
+            float solid_phi_i_j_minus_1_k = solidAccessor.getValue(coord.offsetBy(0, -1, 0));
+            float solid_phi_i_j_k_minus_1 = solidAccessor.getValue(coord.offsetBy(0, 0, -1));
+            float solid_phi_i_plus_1_j_k = solidAccessor.getValue(coord.offsetBy(1, 0, 0));
+            float solid_phi_i_j_plus_1_k = solidAccessor.getValue(coord.offsetBy(0, 1, 0));
+            float solid_phi_i_j_k_plus_1 = solidAccessor.getValue(coord.offsetBy(0, 0, 1));
+
+            float weight_back = 0, weight_front = 0, weight_bot = 0, weight_top = 0, weight_left = 0, weight_right = 0;
+
+            // Back
+            weight_back = (1 - u_weights_accessor.getValue(coord));
+            term = weight_back * scale;
+            if (phi_i_minus_1_j_k < 0) {
+                alpha_matrix.insert(idx, fluid_indices_accessor.getValue(coord.offsetBy(-1, 0, 0))) = -term;
+                diagonal += term;
+            } else if (solid_phi_i_minus_1_j_k > 0) {
+                theta = max(0.001f, fraction_inside(phi_i_minus_1_j_k, phi_i_j_k));
+                diagonal += term * (1.f / theta);
+            }
+
+            // Front
+            weight_front = (1 - u_weights_accessor.getValue(coord.offsetBy(1, 0, 0)));
+            term = weight_front * scale;
+            if (phi_i_plus_1_j_k < 0) {
+                alpha_matrix.insert(idx, fluid_indices_accessor.getValue(coord.offsetBy(1, 0, 0))) = -term;
+                diagonal += term;
+            } else if (solid_phi_i_plus_1_j_k > 0) {
+                theta = max(0.001f, fraction_inside(phi_i_j_k, phi_i_plus_1_j_k));
+                diagonal += term * (1.f / theta);
+            }
+
+            // Bot
+            weight_bot = (1 - v_weights_accessor.getValue(coord));
+            term = weight_bot * scale;
+            if (phi_i_j_minus_1_k < 0) {
+                alpha_matrix.insert(idx, fluid_indices_accessor.getValue(coord.offsetBy(0, -1, 0))) = -term;
+                diagonal += term;
+            } else if (solid_phi_i_j_minus_1_k > 0) {
+                theta = max(0.001f, fraction_inside(phi_i_j_minus_1_k, phi_i_j_k));
+                diagonal += term * (1.f / theta);
+            }
+
+            // Top
+            weight_top = (1 - v_weights_accessor.getValue(coord.offsetBy(0, 1, 0)));
+            term = weight_top * scale;
+            if (phi_i_j_plus_1_k < 0) {
+                alpha_matrix.insert(idx, fluid_indices_accessor.getValue(coord.offsetBy(0, 1, 0))) = -term;
+                diagonal += term;
+            } else if (solid_phi_i_j_plus_1_k > 0) {
+                theta = max(0.001f, fraction_inside(phi_i_j_k, phi_i_j_plus_1_k));
+                diagonal += term * (1.f / theta);
+            }
+
+            // Left
+            weight_left = (1 - w_weights_accessor.getValue(coord));
+            term = weight_left * scale;
+            if (phi_i_j_k_minus_1 < 0) {
+                alpha_matrix.insert(idx, fluid_indices_accessor.getValue(coord.offsetBy(0, 0, -1))) = -term;
+                diagonal += term;
+            } else if (solid_phi_i_j_k_minus_1 > 0) {
+                theta = max(0.001f, fraction_inside(phi_i_j_k_minus_1, phi_i_j_k));
+                diagonal += term * (1.f / theta);
+            }
+
+            // Right
+            weight_right = (1 - w_weights_accessor.getValue(coord.offsetBy(0, 0, 1)));
+            term = weight_right * scale;
+            if (phi_i_j_k_plus_1 < 0) {
+                alpha_matrix.insert(idx, fluid_indices_accessor.getValue(coord.offsetBy(0, 0, 1))) = -term;
+                diagonal += term;
+            } else if (solid_phi_i_j_k_plus_1 > 0) {
+                theta = max(0.001f, fraction_inside(phi_i_j_k, phi_i_j_k_plus_1));
+                diagonal += term * (1.f / theta);
+            }
+
+            alpha_matrix.insert(idx, idx) = diagonal;
+            // #ifdef PRINT
+            // std::cout << " init den: " << density_grid_accessor.getValue(coord) / pow(domain.voxelSize(), 3)
+            //           << " final den: " << density_grid_accessor.getValue(coord)
+            //           << " rhs: " << -1 / dt * (1 - density_grid_accessor.getValue(coord) / domain.density)
+            //           << std::endl;
+            // #endif
+            rhs[idx] = -1 / dt * (1 - clamp(density_grid_accessor.getValue(coord) / domain.density, 0.5f, 1.5f));
+            // rhs[idx] = -1 / dt * (1 - density_grid_accessor.getValue(coord) / domain.density);
+            if (weight_back + weight_front + weight_bot + weight_top + weight_left + weight_right == 0) {
+                rhs[idx] = 0;
+            }
+            // std::cout << "~" << weight_back << "~" << weight_front
+            //           << "~" << weight_bot << "~" << weight_top
+            //           << "~" << weight_left << "~" << weight_right << " rhs " << rhs[idx]
+            //           << std::endl;
+            // // J matrix building for strong two-way (solid-fluid) coupling
+            // for (auto solidObj : domain.solidObjs()) {
+            //     solidObj->constructJMatrix(idx, coord, domain.voxelSize());
+            // }
+        }
+    }
+    // });
+
+    // DON'T KNOW IF SOLIDS SHOULD ENTER THIS EQUATION NEED MORE THINKING
+    // for (auto solidObj : domain.solidObjs()) {
+    //     auto &jMatrix = solidObj->jMatrix();
+    //     jMatrix.prune(0.);
+    //     alpha_matrix += dt * jMatrix.transpose() * solidObj->massMatrixInverse() * jMatrix;
+
+    //     rhs -= jMatrix.transpose() * solidObj->combinedVelocityVector();
+    // }
+
+    auto t_end = high_resolution_clock::now();
     auto system_build_duration = duration_cast<milliseconds>(t_end - t_start);
 
-    t_start = high_resolution_clock::now();
     Eigen::VectorXd pressure_grid(system_size);
     solver.compute(alpha_matrix);
     pressure_grid = solver.solve(rhs);
-    // std::cout << "\n" << solver.error() << " " << solver.info() << " " << solver.iterations() << "\n" << std::endl;
-    t_end = high_resolution_clock::now();
-    auto solver_duration = duration_cast<milliseconds>(t_end - t_start);
-    // std::cout << std::endl;
-    // for (auto it = rhs.begin(); it != rhs.end(); ++it) { std::cout << *it << " "; }
-    // std::cout << std::endl;
-    // std::cout << std::endl;
-    // for (auto it = pressure_grid.begin(); it != pressure_grid.end(); ++it) { std::cout << *it << " "; }
-    // std::cout << std::endl;
+    // #ifdef PRINT
+    // std::cout << rhs << std::endl;
+    // std::cout << pressure_grid << std::endl;
+    // #endif
+    std::cout << "\n" << solver.error() << " " << solver.info() << " " << solver.iterations() << "\n" << std::endl;
+    return pressure_grid;
+
+}
+
 
 void FluidSimulator::project_divirgence_constraint(FluidDomain &domain,
                                                    openvdb::Int32Grid::Accessor &fluid_indices_accessor,
@@ -871,14 +1110,94 @@ void FluidSimulator::project_divirgence_constraint(FluidDomain &domain,
     grid.swapVelocityBuffers();
 }
 
-    t_end = high_resolution_clock::now();
-    auto update_duration = duration_cast<milliseconds>(t_end - t_start);
+void FluidSimulator::project_density_constraint(FluidDomain &domain,
+                                                openvdb::Int32Grid::Accessor &fluid_indices_accessor,
+                                                Eigen::VectorXd &pressure_grid, float dt) {
+    auto &grid = domain.grid();
 
-    printf("weights_duration %.3f, system_build_duration %.3f, solver_duration %.3f, update_duration %.3f \n",
-           weights_duration.count() / 1000.f, system_build_duration.count() / 1000.f, solver_duration.count() /
-           1000.f, update_duration.count() / 1000.f);
+    auto u_valid_acc = domain.grid().validUFront()->getAccessor();
+    auto v_valid_acc = domain.grid().validVFront()->getAccessor();
+    auto w_valid_acc = domain.grid().validWFront()->getAccessor();
 
-    grid.swapVelocityBuffers();
+    auto fluidAccessor = domain.fluidLevelSet().getAccessor();
+    auto solidAccessor = domain.solidLevelSet().getAccessor();
+
+    auto u_weights_accessor = grid.uWeights()->getAccessor();
+    auto v_weights_accessor = grid.vWeights()->getAccessor();
+    auto w_weights_accessor = grid.wWeights()->getAccessor();
+
+    auto displacement_grid_accessor = grid.displacementGrid()->getAccessor();
+
+    auto solidBbox = domain.solidLevelSet().getActiveCoordBBox();
+
+    grid.velBack()->clear();
+
+    for (auto it = solidBbox.beginZYX(); it != solidBbox.endZYX(); ++it) {
+        auto coord = (*it);
+
+        int idx = fluid_indices_accessor.getValue(coord);
+        int idx_i_minus1 = fluid_indices_accessor.getValue(coord.offsetBy(-1, 0, 0));
+        int idx_j_minus1 = fluid_indices_accessor.getValue(coord.offsetBy(0, -1, 0));
+        int idx_k_minus1 = fluid_indices_accessor.getValue(coord.offsetBy(0, 0, -1));
+
+        float p = idx >= 0 ? pressure_grid[idx] : 0;
+        float p_i_minus1 = idx_i_minus1 >= 0 ? pressure_grid[idx_i_minus1] : 0;
+        float p_j_minus1 = idx_j_minus1 >= 0 ? pressure_grid[idx_j_minus1] : 0;
+        float p_k_minus1 = idx_k_minus1 >= 0 ? pressure_grid[idx_k_minus1] : 0;
+
+        float phi_i_j_k = fluidAccessor.getValue(coord);
+        float phi_i_minus_1_j_k = fluidAccessor.getValue(coord.offsetBy(-1, 0, 0));
+        float phi_i_j_minus_1_k = fluidAccessor.getValue(coord.offsetBy(0, -1, 0));
+        float phi_i_j_k_minus_1 = fluidAccessor.getValue(coord.offsetBy(0, 0, -1));
+
+        openvdb::Vec3d dx(0);
+
+        if ((1 - u_weights_accessor.getValue(coord)) > 0 && (phi_i_j_k < 0 || phi_i_minus_1_j_k < 0)) {
+            float theta = 1;
+            if (phi_i_j_k >= 0 || phi_i_minus_1_j_k >= 0) {
+                theta = max(0.001f, fraction_inside(phi_i_minus_1_j_k, phi_i_j_k));
+            }
+            dx[0] = -dt * dt / FluidDomain::density * (p - p_i_minus1) / domain.voxelSize() / theta;
+        }
+
+        if ((1 - v_weights_accessor.getValue(coord)) > 0 && (phi_i_j_k < 0 || phi_i_j_minus_1_k < 0)) {
+            float theta = 1;
+            if (phi_i_j_k >= 0 || phi_i_j_minus_1_k >= 0) {
+                theta = max(0.001f, fraction_inside(phi_i_j_minus_1_k, phi_i_j_k));
+            }
+            dx[1] = -dt * dt / FluidDomain::density * (p - p_j_minus1) / domain.voxelSize() / theta;
+        }
+
+        if ((1 - w_weights_accessor.getValue(coord)) > 0 && (phi_i_j_k < 0 || phi_i_j_k_minus_1 < 0)) {
+            float theta = 1;
+            if (phi_i_j_k >= 0 || phi_i_j_k_minus_1 >= 0) {
+                theta = max(0.001f, fraction_inside(phi_i_j_k_minus_1, phi_i_j_k));
+            }
+            dx[2] = -dt * dt / FluidDomain::density * (p - p_k_minus1) / domain.voxelSize() / theta;
+        }
+        // std::cout << dx << std::endl;
+        displacement_grid_accessor.setValue(coord, dx);
+    }
+    #ifdef PRINT
+    std::cout << std::endl;
+    for (int i = 0; i < 8; ++i) {
+        std::cout << i << std::endl;
+        for (int j = 7; j >= 0; --j) {
+            std::cout << std::endl;
+            for (int k = 0; k < 8; ++k) {
+                std::cout << displacement_grid_accessor.getValue(openvdb::Coord(i, j, k)) << " ";
+            }
+        }
+    }
+    std::cout << std::endl;
+    #endif
+    // for (auto solidObj : domain.solidObjs()) {
+    //     auto new_solid_vel_vector = solidObj->combinedVelocityVector()
+    //                                 + dt * solidObj->massMatrixInverse() * solidObj->jMatrix() * pressure_grid;
+    //     // Eigen::Vector<double, 6> force = solidObj->massMatrixInverse() * solidObj->jMatrix() * pressure_grid;
+    //     solidObj->setVelocityVector(new_solid_vel_vector);
+    // }
+
 }
 
 void FluidSimulator::constrain_velocity(FluidDomain &domain) {

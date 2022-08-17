@@ -14,6 +14,12 @@ MacGrid::MacGrid(openvdb::math::Transform::Ptr i2w_transform, float voxel_size):
     _vel_diff->setTransform(i2w_transform);
     _vel_diff->setGridClass(openvdb::GRID_STAGGERED);
 
+    _density_grid = openvdb::createGrid<openvdb::FloatGrid>(0);
+    _density_grid->setTransform(i2w_transform);
+
+    _displacement_grid = openvdb::createGrid<openvdb::Vec3dGrid>(openvdb::Vec3d(0));
+    _displacement_grid->setTransform(i2w_transform);
+
     _valid_mask_u_front_buffer = openvdb::MaskGrid::create();
     _valid_mask_u_front_buffer->setTransform(i2w_transform);
     _valid_mask_u_back_buffer = openvdb::MaskGrid::create();
@@ -35,6 +41,13 @@ MacGrid::MacGrid(openvdb::math::Transform::Ptr i2w_transform, float voxel_size):
     _v_weights->setTransform(i2w_transform);
     _w_weights = openvdb::createGrid<openvdb::FloatGrid>(0);
     _w_weights->setTransform(i2w_transform);
+
+    _u_fluid_weights = openvdb::createGrid<openvdb::FloatGrid>(0);
+    _u_fluid_weights->setTransform(i2w_transform);
+    _v_fluid_weights = openvdb::createGrid<openvdb::FloatGrid>(0);
+    _v_fluid_weights->setTransform(i2w_transform);
+    _w_fluid_weights = openvdb::createGrid<openvdb::FloatGrid>(0);
+    _w_fluid_weights->setTransform(i2w_transform);
 }
 
 MacGrid::~MacGrid() {}

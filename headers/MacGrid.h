@@ -47,6 +47,8 @@ public:
     inline openvdb::Vec3dGrid::Ptr velBack() { return _vel_back; }
     inline openvdb::Vec3dGrid::Ptr velPrev() { return _vel_prev; }
     inline openvdb::Vec3dGrid::Ptr velDiff() { return _vel_diff; }
+    inline openvdb::FloatGrid::Ptr densityGrid() { return _density_grid; }
+    inline openvdb::Vec3dGrid::Ptr displacementGrid() { return _displacement_grid; };
     inline openvdb::MaskGrid::Ptr validUFront() { return _valid_mask_u_front_buffer; };
     inline openvdb::MaskGrid::Ptr validUBack() { return _valid_mask_u_back_buffer; };
     inline openvdb::MaskGrid::Ptr validVFront() { return _valid_mask_v_front_buffer; };
@@ -57,6 +59,10 @@ public:
     inline openvdb::FloatGrid::Ptr uWeights() { return _u_weights; };
     inline openvdb::FloatGrid::Ptr vWeights() { return _v_weights; };
     inline openvdb::FloatGrid::Ptr wWeights() { return _w_weights; };
+
+    inline openvdb::FloatGrid::Ptr uFluidWeights() { return _u_fluid_weights; };
+    inline openvdb::FloatGrid::Ptr vFluidWeights() { return _v_fluid_weights; };
+    inline openvdb::FloatGrid::Ptr wFluidWeights() { return _w_fluid_weights; };
     
     inline openvdb::Vec3d velHalfIndexed(Accessor &accessor, openvdb::Coord coord) const { return accessor.getValue(coord); };
     inline openvdb::Vec3d velHalfIndexed(Accessor &accessor, int k, int j, int i) const {
@@ -310,12 +316,23 @@ private:
     openvdb::MaskGrid::Ptr _valid_mask_v_back_buffer;
     openvdb::MaskGrid::Ptr _valid_mask_w_front_buffer;
     openvdb::MaskGrid::Ptr _valid_mask_w_back_buffer;
+    
+    // Stores particle density
+    openvdb::FloatGrid::Ptr _density_grid;
+
+    // Used for density constraint
+    openvdb::Vec3dGrid::Ptr _displacement_grid;
 
     // Solid face area weights.
     // 1 - <value> to get the fluid fraction
     openvdb::FloatGrid::Ptr _u_weights;
     openvdb::FloatGrid::Ptr _v_weights;
     openvdb::FloatGrid::Ptr _w_weights;
+
+    // Fluid face area weights.
+    openvdb::FloatGrid::Ptr _u_fluid_weights;
+    openvdb::FloatGrid::Ptr _v_fluid_weights;
+    openvdb::FloatGrid::Ptr _w_fluid_weights;
 
     float _voxel_size;
 };
