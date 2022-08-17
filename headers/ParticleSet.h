@@ -80,17 +80,22 @@ public:
     // Get the world-space radius of the nth particle.
     // Required by rasterizeSpheres().
     inline void getRadius(size_t n, ScalarType &radius) const {
-        if(_zeroRadius) {
+        if (_zeroRadius) {
             radius = 0;
+        } else {
+            radius = _particles[n].radius();
         }
-        radius = _particles[n].radius();
     }
 
     // Get the world-space position and radius of the nth particle.
     // Required by rasterizeSpheres().
-    inline void getPosRad(size_t n, openvdb::Vec3R& xyz, openvdb::Real& radius) const {
+    inline void getPosRad(size_t n, openvdb::Vec3R &xyz, openvdb::Real &radius) const {
         xyz = _i2w_transform->indexToWorld(_particles[n].pos());
-        radius = _particles[n].radius();
+        if (_zeroRadius) {
+            radius = 0;
+        } else {
+            radius = _particles[n].radius();
+        }
     };
 
     // Empty set of all particles
