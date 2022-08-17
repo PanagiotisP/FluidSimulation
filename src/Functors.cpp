@@ -1,4 +1,5 @@
 #include "Functors.h"
+
 #include "FluidSimulator.h"
 
 const float epsilon = 10e-37;
@@ -212,3 +213,56 @@ void ReseedingFunctor::join(const ReseedingFunctor &y) {
     particles_to_be_deleted.insert(particles_to_be_deleted.end(), y.particles_to_be_deleted.begin(),
                                    y.particles_to_be_deleted.end());
 }
+
+
+void DensityCalculator::operator()(openvdb::tree::IteratorRange<openvdb::MaskGrid::ValueOnCIter> range) const {
+    openvdb::tools::ParticleAtlas<openvdb::tools::PointIndexGrid>::Iterator p_it(*_p_atlas);
+    auto density_grid_accessor = _density_grid->getAccessor();
+    auto fluidAccessor = _domain.fluidLevelSet().getAccessor();
+
+
+    for (; range; ++range) {
+        auto &it = range.iterator();
+        auto coord = it.getCoord();
+
+        float phi_i_j_k = fluidAccessor.getValue(coord);
+        float phi_i_minus_1_j_k = fluidAccessor.getValue(coord.offsetBy(-1, 0, 0));
+        float phi_i_j_minus_1_k = fluidAccessor.getValue(coord.offsetBy(0, -1, 0));
+        float phi_i_j_k_minus_1 = fluidAccessor.getValue(coord.offsetBy(0, 0, -1));
+        float phi_i_plus_1_j_k = fluidAccessor.getValue(coord.offsetBy(1, 0, 0));
+        float phi_i_j_plus_1_k = fluidAccessor.getValue(coord.offsetBy(0, 1, 0));
+        float phi_i_j_k_plus_1 = fluidAccessor.getValue(coord.offsetBy(0, 0, 1));
+        float fluid_weight =
+            fraction_inside(phi_i_minus_1_j_k, phi_i_j_k) + fraction_inside(phi_i_j_minus_1_k, phi_i_j_k)
+            + fraction_inside(phi_i_j_k_minus_1, phi_i_j_k) + fraction_inside(phi_i_plus_1_j_k, phi_i_j_k)
+            + fraction_inside(phi_i_j_plus_1_k, phi_i_j_k) + fraction_inside(phi_i_j_k_plus_1, phi_i_j_k);
+
+        // Since the kernel function is the trilinear hat in [-1,1], we only need to check
+        // cells within one cell radius
+        p_it.worldSpaceSearchAndUpdate(_domain._i2w_transform->indexToWorld(openvdb::BBoxd(
+                                           coord.offsetBy(-1, -1, -1).asVec3d(), coord.offsetBy(1, 1, 1).asVec3d())),
+                                       _domain.particleSet());
+
+        // Iterate over all particles contributing to the current cell, as provided by the atlas
+        for (; p_it; ++p_it) {
+            auto &p = _domain.particleSet()[*p_it];
+
+            // Calculate the weight function for the current particle
+            double weight(FluidSimulator::calculate_kernel_function(p.pos() - coord.asVec3d()));
+
+            // Update velocity and weight grids
+            if (weight != 0) {
+                density_grid_accessor.setValue(coord, density_grid_accessor.getValue(coord)
+                                                          + weight * p.mass()
+                                                                / (fluid_weight / 6 * pow(_domain.voxelSize(), 3)));
+            }
+        }
+    }
+}
+
+
+DensityCalculator::DensityCalculator(FluidDomain &domain,
+                                     openvdb::tools::ParticleAtlas<openvdb::tools::PointIndexGrid>::Ptr &p_atlas,
+                                     openvdb::CoordBBox &bbox, const openvdb::FloatGrid::Ptr &density_grid):
+ _domain(domain),
+ _p_atlas(p_atlas), _bbox(bbox), _density_grid(density_grid) {}

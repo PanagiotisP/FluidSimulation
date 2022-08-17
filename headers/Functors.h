@@ -76,3 +76,23 @@ public:
 
     void join(const ReseedingFunctor &y);
 };
+
+// Class for Density Calculation
+// In this case, we iterate over every cell and gather (so the name) the 
+// contribution of all particles inside it, while estimating the volume from face fractions
+class DensityCalculator {
+public:
+    // These grid have preallocated topology of the final grid,
+    // meaning that we can perform parallel writes with the ValueAccessor
+    const openvdb::FloatGrid::Ptr &_density_grid;
+
+    // ParticleAtlas is an accelerator structure that finds the particles within a radius efficiently
+    openvdb::tools::ParticleAtlas<openvdb::tools::PointIndexGrid>::Ptr &_p_atlas;
+    openvdb::CoordBBox &_bbox;
+    FluidDomain &_domain;
+
+    void operator()(openvdb::tree::IteratorRange<openvdb::MaskGrid::ValueOnCIter>) const;
+
+    DensityCalculator(FluidDomain &domain, openvdb::tools::ParticleAtlas<openvdb::tools::PointIndexGrid>::Ptr &p_atlas,
+                      openvdb::CoordBBox &bbox, const openvdb::FloatGrid::Ptr &density_grid);
+};
