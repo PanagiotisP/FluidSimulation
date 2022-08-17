@@ -20,7 +20,10 @@ public:
 
     void print_velocity_field(MacGrid &grid, const char *variable_name);
 
+    static double calculate_kernel_function(openvdb::Vec3d vec);
+    static double calculate_kernel_function(double x, double y, double z);
     static openvdb::Vec3d calculate_kernel_function_staggered(openvdb::Vec3d difference);
+
 private:
     float compute_cfl(FluidDomain &domain);
     void transfer_from_particles_to_grid(FluidDomain &domain);

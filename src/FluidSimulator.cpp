@@ -931,6 +931,20 @@ void FluidSimulator::constrain_velocity(FluidDomain &domain, SolidObject solidOb
     grid.swapVelocityBuffers();
 }
 
+double FluidSimulator::calculate_kernel_function(openvdb::Vec3d vec) {
+    double val1 = calculate_trilinear_hat(vec[0]);
+    double val2 = calculate_trilinear_hat(vec[1]);
+    double val3 = calculate_trilinear_hat(vec[2]);
+    return val1 * val2 * val3;
+}
+
+double FluidSimulator::calculate_kernel_function(double x, double y, double z) {
+    double val1 = calculate_trilinear_hat(x);
+    double val2 = calculate_trilinear_hat(y);
+    double val3 = calculate_trilinear_hat(z);
+    return val1 * val2 * val3;
+}
+
 openvdb::Vec3d FluidSimulator::calculate_kernel_function_staggered(openvdb::Vec3d difference) {
     float val_x_0 = calculate_trilinear_hat(difference[0]);
     float val_y_0 = calculate_trilinear_hat(difference[1]);
