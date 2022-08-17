@@ -838,7 +838,8 @@ void FluidSimulator::constrain_velocity(FluidDomain &domain) {
         }
         if (v_weights_accessor.getValue(coord) == 1) {
             // auto normal = grad_staggered_y_accessor.getValue(coord).unit();
-            auto normal = grad_staggered_y_sampler.isSample(coord.asVec3d() - openvdb::Vec3d(0, 0.5, 0)).unit();
+            auto normal = grad_staggered_y_sampler.isSample(coord.asVec3d() - openvdb::Vec3d(0, 0.5, 0));
+            if (!normal.isZero()) normal.normalize();
             // auto vel = vel_staggered_y_accessor.getValue(coord);
             auto vel = vel_staggered_y_sampler.isSample(coord.asVec3d() - openvdb::Vec3d(0, 0.5, 0));
             auto projection = vel.projection(normal);
@@ -847,7 +848,8 @@ void FluidSimulator::constrain_velocity(FluidDomain &domain) {
         }
         if (w_weights_accessor.getValue(coord) == 1) {
             // auto normal = grad_staggered_z_accessor.getValue(coord).unit();
-            auto normal = grad_staggered_z_sampler.isSample(coord.asVec3d() - openvdb::Vec3d(0, 0, 0.5)).unit();
+            auto normal = grad_staggered_z_sampler.isSample(coord.asVec3d() - openvdb::Vec3d(0, 0, 0.5));
+            if (!normal.isZero()) normal.normalize();
             // auto vel = vel_staggered_z_accessor.getValue(coord);
             auto vel = vel_staggered_z_sampler.isSample(coord.asVec3d() - openvdb::Vec3d(0, 0, 0.5));
             auto projection = vel.projection(normal);
@@ -901,6 +903,7 @@ void FluidSimulator::constrain_velocity(FluidDomain &domain, SolidObject solidOb
             auto solidVel = vel_trans + domain.voxelSize() * vel_ang.cross(coord.asVec3d() - openvdb::Vec3d(0.5, 0, 0));
             // auto normal = grad_staggered_x_accessor.getValue(coord).unit();
             auto normal = grad_staggered_x_sampler.isSample(coord.asVec3d() - openvdb::Vec3d(0.5, 0, 0));
+            if (!normal.isZero()) normal.normalize();
             auto vel = vel_staggered_x_sampler.isSample(coord.asVec3d() - openvdb::Vec3d(0.5, 0, 0));
             auto projection = vel.projection(normal);
             auto tangential = vel - projection;
@@ -909,7 +912,8 @@ void FluidSimulator::constrain_velocity(FluidDomain &domain, SolidObject solidOb
         if (v_weights_accessor.getValue(coord) == 1) {
             auto solidVel = vel_trans + domain.voxelSize() * vel_ang.cross(coord.asVec3d() - openvdb::Vec3d(0, 0.5, 0));
             // auto normal = grad_staggered_y_accessor.getValue(coord).unit();
-            auto normal = grad_staggered_y_sampler.isSample(coord.asVec3d() - openvdb::Vec3d(0, 0.5, 0)).unit();
+            auto normal = grad_staggered_y_sampler.isSample(coord.asVec3d() - openvdb::Vec3d(0, 0.5, 0));
+            if (!normal.isZero()) normal.normalize();
             auto vel = vel_staggered_y_sampler.isSample(coord.asVec3d() - openvdb::Vec3d(0, 0.5, 0));
             auto projection = vel.projection(normal);
             auto tangential = vel - projection;
@@ -919,7 +923,8 @@ void FluidSimulator::constrain_velocity(FluidDomain &domain, SolidObject solidOb
             auto solidVel = vel_trans + domain.voxelSize() * vel_ang.cross(coord.asVec3d() - openvdb::Vec3d(0, 0, 0.5));
 
             // auto normal = grad_staggered_z_accessor.getValue(coord).unit();
-            auto normal = grad_staggered_z_sampler.isSample(coord.asVec3d() - openvdb::Vec3d(0, 0, 0.5)).unit();
+            auto normal = grad_staggered_z_sampler.isSample(coord.asVec3d() - openvdb::Vec3d(0, 0, 0.5));
+            if (!normal.isZero()) normal.normalize();
             auto vel = vel_staggered_z_sampler.isSample(coord.asVec3d() - openvdb::Vec3d(0, 0, 0.5));
             auto projection = vel.projection(normal);
             auto tangential = vel - projection;
