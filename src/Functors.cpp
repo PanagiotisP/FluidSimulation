@@ -101,7 +101,7 @@ void ShootingTransfer::join(const ShootingTransfer &y) {
 
 // THIS NEEDS REVISION
 void ReseedingFunctor::operator()(openvdb::tree::IteratorRange<openvdb::MaskGrid::ValueOnCIter> &range) {
-    MacGrid::Sampler vel_sampler(vel->getAccessor(), vel->transform());
+    MacGrid::StaggeredSampler vel_sampler(vel->getAccessor(), vel->transform());
     openvdb::tools::ParticleAtlas<openvdb::tools::PointIndexGrid>::Iterator p_it(*p_atlas);
     auto active_mask_accessor = active_mask->getAccessor();
     for (; range; ++range) {

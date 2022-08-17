@@ -119,8 +119,12 @@ void FluidSimulator::transfer_from_grid_to_particles(FluidDomain &domain, float 
     MacGrid &grid = domain.grid();
 
     tbb::parallel_for(tbb::blocked_range<int>(0, domain.particleSet().size(), 1), [&](tbb::blocked_range<int> range) {
-        MacGrid::Sampler vel_sampler(grid.velFront()->getAccessor(), grid.velFront()->transform());
-        MacGrid::Sampler vel_diff_sampler(grid.velDiff()->getAccessor(), grid.velDiff()->transform());
+        MacGrid::StaggeredSampler vel_sampler(grid.velFront()->getAccessor(), grid.velFront()->transform());
+        MacGrid::StaggeredSampler vel_diff_sampler(grid.velDiff()->getAccessor(), grid.velDiff()->transform());
+
+        MacGrid::Sampler displacement_sampler(grid.displacementGrid()->getAccessor(),
+                                              grid.displacementGrid()->transform());
+
         for (int i = range.begin(); i < range.end(); ++i) {
             auto &p = domain.particleSet()[i];
             openvdb::Vec3d pic_vel = vel_sampler.isSample(p.pos());
@@ -810,9 +814,9 @@ void FluidSimulator::constrain_velocity(FluidDomain &domain) {
     openvdb::tools::GridSampler<openvdb::Vec3SGrid::Accessor, openvdb::tools::BoxSampler> grad_staggered_z_sampler(
         gradient->getAccessor(), gradient->transform());
 
-    MacGrid::Sampler vel_staggered_x_sampler(grid.velFront()->getAccessor(), grid.velFront()->transform());
-    MacGrid::Sampler vel_staggered_y_sampler(grid.velFront()->getAccessor(), grid.velFront()->transform());
-    MacGrid::Sampler vel_staggered_z_sampler(grid.velFront()->getAccessor(), grid.velFront()->transform());
+    MacGrid::StaggeredSampler vel_staggered_x_sampler(grid.velFront()->getAccessor(), grid.velFront()->transform());
+    MacGrid::StaggeredSampler vel_staggered_y_sampler(grid.velFront()->getAccessor(), grid.velFront()->transform());
+    MacGrid::StaggeredSampler vel_staggered_z_sampler(grid.velFront()->getAccessor(), grid.velFront()->transform());
 
     auto unionMask = openvdb::createGrid<openvdb::MaskGrid>();
     unionMask->tree().topologyUnion(grid.uWeights()->tree());
@@ -881,9 +885,9 @@ void FluidSimulator::constrain_velocity(FluidDomain &domain, SolidObject solidOb
     openvdb::tools::GridSampler<openvdb::Vec3SGrid::Accessor, openvdb::tools::BoxSampler> grad_staggered_z_sampler(
         gradient->getAccessor(), gradient->transform());
 
-    MacGrid::Sampler vel_staggered_x_sampler(grid.velFront()->getAccessor(), grid.velFront()->transform());
-    MacGrid::Sampler vel_staggered_y_sampler(grid.velFront()->getAccessor(), grid.velFront()->transform());
-    MacGrid::Sampler vel_staggered_z_sampler(grid.velFront()->getAccessor(), grid.velFront()->transform());
+    MacGrid::StaggeredSampler vel_staggered_x_sampler(grid.velFront()->getAccessor(), grid.velFront()->transform());
+    MacGrid::StaggeredSampler vel_staggered_y_sampler(grid.velFront()->getAccessor(), grid.velFront()->transform());
+    MacGrid::StaggeredSampler vel_staggered_z_sampler(grid.velFront()->getAccessor(), grid.velFront()->transform());
 
     auto unionMask = openvdb::createGrid<openvdb::MaskGrid>();
     unionMask->tree().topologyUnion(solidObject.uWeights()->tree());

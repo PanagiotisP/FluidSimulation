@@ -33,7 +33,8 @@ public:
     ~MacGrid();
 
     typedef openvdb::Vec3dGrid::Accessor Accessor;
-    typedef openvdb::tools::GridSampler<openvdb::Vec3dGrid::Accessor, openvdb::tools::StaggeredBoxSampler> Sampler;
+    typedef openvdb::tools::GridSampler<openvdb::Vec3dGrid::Accessor, openvdb::tools::StaggeredBoxSampler> StaggeredSampler;
+    typedef openvdb::tools::GridSampler<openvdb::Vec3dGrid::Accessor, openvdb::tools::BoxSampler> Sampler;
 
     void updatePreviousVelocityBuffer();
     void updateDiffBuffers();
@@ -62,18 +63,18 @@ public:
         return accessor.getValue(openvdb::Coord(k, j, i));
     };
 
-    inline openvdb::Vec3d velInterpolatedI(Sampler &sampler, openvdb::Vec3d isPoint) const {
+    inline openvdb::Vec3d velInterpolatedI(StaggeredSampler &sampler, openvdb::Vec3d isPoint) const {
         return sampler.isSample(isPoint);
     };
-    inline openvdb::Vec3d velInterpolatedI(Sampler &sampler, double x, double y, double z) const {
+    inline openvdb::Vec3d velInterpolatedI(StaggeredSampler &sampler, double x, double y, double z) const {
         return sampler.isSample(openvdb::Vec3d(x, y, z));
     };
 
-    inline openvdb::Vec3d velInterpolatedW(Sampler &sampler, openvdb::Vec3d wsPoint) const {
+    inline openvdb::Vec3d velInterpolatedW(StaggeredSampler &sampler, openvdb::Vec3d wsPoint) const {
         return sampler.wsSample(wsPoint);
     };
 
-    inline openvdb::Vec3d velInterpolatedW(Sampler &sampler, double x, double y, double z) const {
+    inline openvdb::Vec3d velInterpolatedW(StaggeredSampler &sampler, double x, double y, double z) const {
         return sampler.wsSample(openvdb::Vec3d(x, y, z));
     };
 

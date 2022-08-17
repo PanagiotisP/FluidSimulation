@@ -34,7 +34,7 @@ void Renderer::initialisation() {
 }
 
 void Renderer::draw(FluidDomain &fluidDomain, sf::RenderWindow &window) {
-    MacGrid::Sampler vel_sampler(fluidDomain.grid().velFront()->getAccessor(),
+    MacGrid::StaggeredSampler vel_sampler(fluidDomain.grid().velFront()->getAccessor(),
                                  fluidDomain.grid().velFront()->transform());
     if (SHOW_VECTORS) {
         for (int j = 0; j < sim_size_y; ++j) {

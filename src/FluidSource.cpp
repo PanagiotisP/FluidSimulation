@@ -33,7 +33,7 @@ void FluidSource::update(MacGrid &grid, ParticleSet &particle_set, float dt) {
         std::shared_ptr<LevelSet::Sampler> sampler(_spawning_region.getSampler(_spawning_region.getAccessor()));
         // LevelSet::Sampler sampler(accessor, _spawning_region.getLevelSet()->transform());
 
-        MacGrid::Sampler vel_sampler(grid.velFront()->getAccessor(), _spawning_region.getLevelSet()->transform());
+        MacGrid::StaggeredSampler vel_sampler(grid.velFront()->getAccessor(), _spawning_region.getLevelSet()->transform());
 
         assert(coordBBox.min() < coordBBox.max());
 
