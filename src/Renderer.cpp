@@ -75,19 +75,18 @@ void Renderer::draw(FluidDomain &fluidDomain, sf::RenderWindow &window) {
 
         for (int j = 0; j < sim_size_y; ++j) {
             for (int i = 0; i < sim_size_x; ++i) {
-                if (fluidAccessor.getValue(openvdb::Coord(32, j, i)) < 0) {
+                if (fluidAccessor.getValue(openvdb::Coord(sim_size_x / 2, j, i)) < 0) {
 #if defined SMOKE
                     render_grid(i, j).setFillColor(
                         sf::Color(255, 255, 255,
                                   255
-                                      * fluidAccessor.getValue(openvdb::Coord(
-                                          32, j, i))
+                                      * fluidAccessor.getValue(openvdb::Coord(sim_size_x / 2, j, i))
                                             concentrationInterpolated(point[0], point[1])));
 #else
                     render_grid(i, j).setFillColor(sf::Color::Cyan);
 #endif
-                } else if (fluidAccessor.getValue(openvdb::Coord(32, j, i)) > 0
-                           && solidAccessor.getValue(openvdb::Coord(32, j, i)) > 0) { // Check for AIR cell
+                } else if (fluidAccessor.getValue(openvdb::Coord(sim_size_x / 2, j, i)) > 0
+                           && solidAccessor.getValue(openvdb::Coord(sim_size_x / 2, j, i)) > 0) { // Check for AIR cell
                     render_grid(i, j).setFillColor(sf::Color::White);
                 } else {
                     render_grid(i, j).setFillColor(sf::Color::Yellow);
@@ -99,8 +98,7 @@ void Renderer::draw(FluidDomain &fluidDomain, sf::RenderWindow &window) {
 
     if (SHOW_PARTICLES) {
         for (auto it = fluidDomain.particleSet().begin(); it != fluidDomain.particleSet().end(); ++it) {
-            if (32 - 1 < (*it).pos()[0]
-                && (*it).pos()[0] < 32 + 1) {
+            if (sim_size_x / 2 - 1 < (*it).pos()[0] && (*it).pos()[0] < sim_size_x / 2 + 1) {
                 sf::CircleShape particle(2); // grid_width_x / 2 / sim_size_x);
                 particle.setFillColor(sf::Color::Blue);
                 particle.setPosition(offset.x + it->pos()[2] * grid_width_x / sim_size_x,
