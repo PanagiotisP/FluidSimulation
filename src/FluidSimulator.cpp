@@ -141,8 +141,8 @@ void FluidSimulator::apply_particle_displacements(FluidDomain &domain) {
     MacGrid &grid = domain.grid();
 
     tbb::parallel_for(tbb::blocked_range<int>(0, domain.particleSet().size(), 1), [&](tbb::blocked_range<int> range) {
-        MacGrid::Sampler displacement_sampler(grid.displacementGrid()->getAccessor(),
-                                              grid.displacementGrid()->transform());
+        MacGrid::StaggeredSampler displacement_sampler(grid.displacementGrid()->getAccessor(),
+                                                       grid.displacementGrid()->transform());
 
         for (int i = range.begin(); i < range.end(); ++i) {
             auto &p = domain.particleSet()[i];
@@ -1181,7 +1181,7 @@ void FluidSimulator::project_density_constraint(FluidDomain &domain,
             }
             dx[2] = -dt * dt / FluidDomain::density * (p - p_k_minus1) / domain.voxelSize() / theta;
         }
-        // std::cout << dx << std::endl;
+        dx /= domain.voxelSize();
         displacement_grid_accessor.setValue(coord, dx);
     }
 #ifdef PRINT
