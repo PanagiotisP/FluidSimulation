@@ -7,7 +7,7 @@ set(MSVC true)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
-set(SRC_FILES src/FluidSimulator.cpp src/FluidDomain.cpp src/FluidSource.cpp src/LevelSet.cpp src/MacGrid.cpp src/ParticleSet.cpp src/Renderer.cpp src/SolidObject.cpp src/Functors.cpp main.cpp)
+set(SRC_FILES src/FluidSimulator.cpp src/FluidDomain.cpp src/FluidSource.cpp src/LevelSet.cpp src/MacGrid.cpp src/ParticleSet.cpp src/Renderer.cpp src/SolidObject.cpp src/Functors.cpp src/util.cpp main.cpp)
 # set(SRC_FILES main.cpp)
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /O2 /openmp" )

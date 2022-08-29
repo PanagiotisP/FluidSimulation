@@ -85,6 +85,7 @@ public:
     // These grid have preallocated topology of the final grid,
     // meaning that we can perform parallel writes with the ValueAccessor
     const openvdb::FloatGrid::Ptr &_density_grid;
+    const float _rest_density;
 
     // ParticleAtlas is an accelerator structure that finds the particles within a radius efficiently
     openvdb::tools::ParticleAtlas<openvdb::tools::PointIndexGrid>::Ptr &_p_atlas;
@@ -94,5 +95,5 @@ public:
     void operator()(openvdb::tree::IteratorRange<openvdb::MaskGrid::ValueOnCIter>) const;
 
     DensityCalculator(FluidDomain &domain, openvdb::tools::ParticleAtlas<openvdb::tools::PointIndexGrid>::Ptr &p_atlas,
-                      openvdb::CoordBBox &bbox, const openvdb::FloatGrid::Ptr &density_grid);
+                      openvdb::CoordBBox &bbox, const openvdb::FloatGrid::Ptr &density_grid, const float rest_density);
 };

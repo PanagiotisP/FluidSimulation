@@ -2,6 +2,9 @@
 
 #include "FluidSimulator.h"
 
+#include <algorithm>
+#include <array>
+
 const float epsilon = 10e-37;
 
 void GatherTransfer::operator()(const tbb::blocked_range<int> &i_range) const {
@@ -13,8 +16,8 @@ void GatherTransfer::operator()(const tbb::blocked_range<int> &i_range) const {
         for (int j = bbox.min()[1]; j < bbox.max()[1]; ++j) {
             for (int k = bbox.min()[2]; k < bbox.max()[2]; ++k) {
 
-                // Since the kernel function is the trilinear hat in [-1,1], we only need to check 
-                // cells within one cell radius 
+                // Since the kernel function is the trilinear hat in [-1,1], we only need to check
+                // cells within one cell radius
                 p_it.worldSpaceSearchAndUpdate(
                     domain._i2w_transform->indexToWorld(
                         openvdb::BBoxd(openvdb::Vec3d(i - 1, j - 1, k - 1), openvdb::Vec3d(i + 1, j + 1, k + 1))),
@@ -227,17 +230,20 @@ void DensityCalculator::operator()(openvdb::tree::IteratorRange<openvdb::MaskGri
         float phi_i_plus_1_j_k = fluidAccessor.getValue(coord.offsetBy(1, 0, 0));
         float phi_i_j_plus_1_k = fluidAccessor.getValue(coord.offsetBy(0, 1, 0));
         float phi_i_j_k_plus_1 = fluidAccessor.getValue(coord.offsetBy(0, 0, 1));
+
+        // To be used as a rough estimation of fluid volume of the cell
         float fluid_weight =
             fraction_inside(phi_i_minus_1_j_k, phi_i_j_k) + fraction_inside(phi_i_j_minus_1_k, phi_i_j_k)
             + fraction_inside(phi_i_j_k_minus_1, phi_i_j_k) + fraction_inside(phi_i_plus_1_j_k, phi_i_j_k)
             + fraction_inside(phi_i_j_plus_1_k, phi_i_j_k) + fraction_inside(phi_i_j_k_plus_1, phi_i_j_k);
 
         // Since the kernel function is the trilinear hat in [-1,1], we only need to check
-        // cells within one cell radius
-        p_it.worldSpaceSearchAndUpdate(_domain._i2w_transform->indexToWorld(openvdb::BBoxd(
-                                           coord.offsetBy(-1, -1, -1).asVec3d(), coord.offsetBy(1, 1, 1).asVec3d())),
-                                       _domain.particleSet());
-
+        // distances up to 1.
+        p_it.worldSpaceSearchAndUpdate(
+            _domain._i2w_transform->indexToWorld(openvdb::BBoxd(coord.asVec3d() - openvdb::Vec3d(1., 1., 1.),
+                                                                coord.asVec3d() + openvdb::Vec3d(1., 1., 1.))),
+            _domain.particleSet());
+        float density { 0.f };
         // Iterate over all particles contributing to the current cell, as provided by the atlas
         for (; p_it; ++p_it) {
             auto &p = _domain.particleSet()[*p_it];
@@ -246,10 +252,72 @@ void DensityCalculator::operator()(openvdb::tree::IteratorRange<openvdb::MaskGri
             double weight(FluidSimulator::calculate_kernel_function(p.pos() - coord.asVec3d()));
 
             // Update velocity and weight grids
-            if (weight != 0) {
-                density_grid_accessor.setValue(coord, density_grid_accessor.getValue(coord)
-                                                          + weight * p.mass()
-                                                                / (fluid_weight / 6 * pow(_domain.voxelSize(), 3)));
+            if (weight > 0 && fluid_weight > 0) {
+                density += density_grid_accessor.getValue(coord)
+                           + weight * p.mass() / (fluid_weight / 6 * pow(_domain.voxelSize(), 3));
+            }
+        }
+
+        // This prevents clumping of particles near the solid and empty cells, due to density underestimation
+        if (0 < fluid_weight && fluid_weight < 6) {
+            density = max(density, _rest_density);
+        }
+
+        density_grid_accessor.setValue(coord, density);
+
+        // Find particles the lie inside the current cell
+        p_it.worldSpaceSearchAndUpdate(
+            _domain._i2w_transform->indexToWorld(openvdb::BBoxd(coord.asVec3d() - openvdb::Vec3d(0.5, 0.5, 0.5),
+                                                                coord.asVec3d() + openvdb::Vec3d(0.5, 0.5, 0.5))),
+            _domain.particleSet());
+
+        // Redistribution of particles
+        // This is done to resolve coinincidence of particles that may happen due to particles being projected
+        // to the same location after entering a solid during advection
+        if (density > 1.5 * _rest_density) {
+            // Redistribute particles as a solution for the problem of coinciding particles.
+            // The cell is split in subcells and each particle is given a random position in each subcell
+            // If the number of subcells is not equal to the particles, the excess particles
+            // are distributed into a random subcell
+
+            // TODO: I really should transfer the whole particle uniform seeding process in a function
+            // so as to be used in the initial particle seeding (from a FluidSource)
+            const int particles_num = p_it.size();
+            if (particles_num != 0) {
+                // Find the number of subcells in which the particles will be redistributed
+                const int subdivision_factor = floor(pow(particles_num, 1. / 3.));
+                const int subcells_num = pow(subdivision_factor, 3);
+
+                // This will be used to randomly choose a subcell for the excess particles
+                std::vector<int> indices(subcells_num);
+                int counter { 0 };
+                std::generate(indices.begin(), indices.end(), [&]() { return counter++; });
+
+                std::shuffle(indices.begin(), indices.end(), Random::mt);
+                auto cell_origin_corner = coord.asVec3d() - openvdb::Vec3d(0.5, 0.5, 0.5);
+
+                MacGrid::StaggeredSampler vel_sampler(_domain.grid().velFront()->getAccessor(),
+                                                      _domain.grid().velFront()->transform());
+
+                int loop_count = 0;
+                for (; p_it; ++p_it) {
+                    int i, j, k;
+                    int linear_idx = indices[loop_count++ % indices.size()];
+                    linearTo3d(linear_idx, subdivision_factor, subdivision_factor, i, j, k);
+                    auto subcell_coord(openvdb::Coord(i, j, k));
+
+
+                    auto &p = _domain.particleSet()[*p_it];
+                    const openvdb::Vec3d new_position(
+                        cell_origin_corner + subcell_coord.asVec3d() / subdivision_factor
+                        + openvdb::Vec3d(Random::get(0.0, 1.0), Random::get(0.0, 1.0), Random::get(0.0, 1.0))
+                              / subdivision_factor);
+                    p.setPosition(new_position);
+
+                    // No need to resample velocity, as it will be transfered on particles on later stage
+                    // const openvdb::Vec3d new_velocity(_domain.grid().velInterpolatedI(vel_sampler, new_position));
+                    // p.setVelocity(new_velocity);
+                }
             }
         }
     }
@@ -258,6 +326,7 @@ void DensityCalculator::operator()(openvdb::tree::IteratorRange<openvdb::MaskGri
 
 DensityCalculator::DensityCalculator(FluidDomain &domain,
                                      openvdb::tools::ParticleAtlas<openvdb::tools::PointIndexGrid>::Ptr &p_atlas,
-                                     openvdb::CoordBBox &bbox, const openvdb::FloatGrid::Ptr &density_grid):
+                                     openvdb::CoordBBox &bbox, const openvdb::FloatGrid::Ptr &density_grid,
+                                     const float rest_density):
  _domain(domain),
- _p_atlas(p_atlas), _bbox(bbox), _density_grid(density_grid) {}
+ _p_atlas(p_atlas), _bbox(bbox), _density_grid(density_grid), _rest_density(rest_density) {}

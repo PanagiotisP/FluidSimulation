@@ -655,7 +655,8 @@ void FluidSimulator::compute_density(FluidDomain domain) {
 
     if (pointMask->activeVoxelCount() != 0) {
         auto bbox = pointMask->evalActiveVoxelBoundingBox();
-        tbb::parallel_for(fluidRange, DensityCalculator(domain, p_atlas, bbox, grid.densityGrid()));
+        tbb::parallel_for(fluidRange,
+                          DensityCalculator(domain, p_atlas, bbox, grid.densityGrid(), FluidDomain::density));
     }
 
     // Re-enable particles' radii

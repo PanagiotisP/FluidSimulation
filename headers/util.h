@@ -449,6 +449,13 @@ void write_matlab(std::ostream &output, const std::vector<T> &a, const char *var
 }
 
 template <class T>
+void linearTo3d(T linear_idx, T size_y, T size_z, T &x, T &y, T &z) {
+    z = linear_idx % size_z;
+    y = (linear_idx /  size_z) % size_y;
+    x = linear_idx / (size_y * size_z);
+}
+
+template <class T>
 T calculate_quad_bspline(T x) {
     if (-1.5f <= x && x < -0.5f) {
         return 0.5f * sqr(x + 1.5f);
