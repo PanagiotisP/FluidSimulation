@@ -16,7 +16,7 @@ public:
 
     // static for now
     // Density in kg/m^3
-    static constexpr float density = 1000;
+    static const float density;
 
     void addFluidSource(std::shared_ptr<FluidSource> fluid_source);
     void removeFluidSource(int i);

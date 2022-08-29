@@ -9,6 +9,8 @@
 #include <openvdb/tools/ParticlesToLevelSet.h>
 #include <random>
 
+const float FluidDomain::density { 1000.f };
+
 FluidDomain::FluidDomain(openvdb::FloatGrid::Ptr boundary,
                          openvdb::math::Transform::Ptr i2w_transform, float voxel_size):
  _grid(i2w_transform, voxel_size),

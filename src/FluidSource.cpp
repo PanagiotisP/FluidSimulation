@@ -1,5 +1,12 @@
 #include "FluidSource.h"
 
+// Forward declaration
+// Not including due to circular dependency
+class FluidDomain {
+public:
+    static const float density;
+};
+
 FluidSource::FluidSource():
  _spawning_region(openvdb::createLevelSet<openvdb::FloatGrid>()), _max_spawning_duration(0) {}
 FluidSource::FluidSource(LevelSet spawning_region, openvdb::Vec3d vel, int particle_generation_rate,
@@ -58,7 +65,8 @@ void FluidSource::update(MacGrid &grid, ParticleSet &particle_set, float dt) {
                         // TODO Need to check this addition of spawning and interpolated velocity
                         openvdb::Vec3d new_vel = grid.velInterpolatedI(vel_sampler, new_pos) + _vel;
                         // As for now, radius is the same for all particles. To be changed later.
-                        Particle p(new_pos, new_vel, 1.01f * grid.voxelSize() * sqrt(3) / 2.f, 0);
+                        Particle p(new_pos, new_vel, 1.01f * grid.voxelSize() * sqrt(3) / 2.f,
+                                    FluidDomain::density * pow(grid.voxelSize(), 3) / spawn_counter);
                         particle_set.addParticle(p);
                         temp_spawn_counter--;
                     }
