@@ -5,6 +5,7 @@
 #include <cmath>
 #include <iostream>
 #include <vector>
+#include <random>
 
 #ifndef M_PI
 const double M_PI = 3.1415926535897932384626433832795;
@@ -571,4 +572,8 @@ T fraction_inside(T phi_bl, T phi_br, T phi_tl, T phi_tr) {
         return clamp(return_value, static_cast<T>(0), static_cast<T>(1));
 }
 
+namespace Random {
+    extern std::mt19937 mt;
+    double get(double min, double max);
+} // namespace Random
 #endif

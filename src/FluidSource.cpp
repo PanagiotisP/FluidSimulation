@@ -31,10 +31,6 @@ void FluidSource::update(MacGrid &grid, ParticleSet &particle_set, float dt) {
         int spawn_counter = static_cast<int>(spawn_amount);
         float probability_threshold = spawn_amount - static_cast<float>(spawn_counter);
 
-        std::random_device rd;
-        std::mt19937 gen(rd());
-        std::uniform_real_distribution<> dis(0., 1.);
-
         auto coordBBox = _spawning_region.getActiveCoordBBox();
         auto accessor = _spawning_region.getAccessor();
         std::shared_ptr<LevelSet::Sampler> sampler(_spawning_region.getSampler(_spawning_region.getAccessor()));
@@ -52,13 +48,15 @@ void FluidSource::update(MacGrid &grid, ParticleSet &particle_set, float dt) {
             auto cellCenterCoord = (*it);
             if (accessor.getValue(cellCenterCoord) < 0) {
                 int temp_spawn_counter = spawn_counter;
-                if (dis(gen) < probability_threshold) temp_spawn_counter++;
+                if (Random::get(-0.5, 0.5) < probability_threshold) temp_spawn_counter++;
 
                 // Include a max tries for the spawning of a particle to avoid endless loops
                 int tries = 0;
                 while (temp_spawn_counter > 0 && tries < 8 * temp_spawn_counter) {
                     tries++;
-                    openvdb::Vec3d new_pos = cellCenterCoord.asVec3d() + openvdb::Vec3d(dis(gen), dis(gen), dis(gen));
+                    openvdb::Vec3d new_pos =
+                        cellCenterCoord.asVec3d()
+                        + openvdb::Vec3d(Random::get(-0.5, 0.5), Random::get(-0.5, 0.5), Random::get(-0.5, 0.5));
 
                     // Spawn only inside fluid cells
                     if (_spawning_region.valueInterpolatedI(sampler, new_pos) < 0) {

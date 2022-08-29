@@ -178,7 +178,8 @@ void ReseedingFunctor::operator()(openvdb::tree::IteratorRange<openvdb::MaskGrid
             while (p_counter++ < min_particles) {
                 openvdb::Vec3d new_pos =
                     cell_bbox.min()
-                    + openvdb::Vec3d(dis(gen), dis(gen), dis(gen)) * (cell_bbox.max() - cell_bbox.min());
+                    + openvdb::Vec3d(Random::get(0.0, 1.0), Random::get(0.0, 1.0), Random::get(0.0, 1.0))
+                          * (cell_bbox.max() - cell_bbox.min());
                 openvdb::Vec3d new_vel = domain.grid().velInterpolatedI(vel_sampler, new_pos);
                 Particle p(new_pos, new_vel, 1.01f * domain.voxelSize() * sqrt(3) / 2.f, 0);
                 particles_to_be_added.push_back(p);
@@ -189,20 +190,14 @@ void ReseedingFunctor::operator()(openvdb::tree::IteratorRange<openvdb::MaskGrid
 
 ReseedingFunctor::ReseedingFunctor(ReseedingFunctor &x, tbb::split):
  domain(x.domain), p_atlas(x.p_atlas), active_mask(x.active_mask), vel(x.vel), min_particles(x.min_particles),
- max_particles(x.max_particles) {
-    gen = std::mt19937(rd());
-    dis = std::uniform_real_distribution(0., 1.);
-}
+ max_particles(x.max_particles) {}
 
 ReseedingFunctor::ReseedingFunctor(FluidDomain &domain,
                                    openvdb::tools::ParticleAtlas<openvdb::tools::PointIndexGrid>::Ptr &p_atlas,
                                    openvdb::MaskGrid::Ptr active_mask, openvdb::Vec3dGrid::Ptr vel,
                                    const int min_particles, const int max_particles):
  domain(domain),
- p_atlas(p_atlas), active_mask(active_mask), vel(vel), min_particles(min_particles), max_particles(max_particles) {
-    gen = std::mt19937(rd());
-    dis = std::uniform_real_distribution(0., 1.);
-}
+ p_atlas(p_atlas), active_mask(active_mask), vel(vel), min_particles(min_particles), max_particles(max_particles) {}
 
 void ReseedingFunctor::join(const ReseedingFunctor &y) {
     particles_to_be_added.reserve(particles_to_be_added.size() + y.particles_to_be_added.size());
