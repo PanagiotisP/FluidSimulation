@@ -56,6 +56,6 @@ private:
 
     void transfer_from_grid_to_particles(FluidDomain &domain, float flip_pic_ratio);
     void apply_particle_displacements(FluidDomain &domain);
-
+    void particle_diffusion(FluidDomain &domain, float k, float dt);
     const openvdb::CoordBBox _bbox;
 };

@@ -1320,6 +1320,30 @@ void FluidSimulator::constrain_velocity(FluidDomain &domain, SolidObject solidOb
     grid.swapVelocityBuffers();
 }
 
+void FluidSimulator::particle_diffusion(FluidDomain &domain, float k, float dt) {
+    MacGrid &grid = domain.grid();
+
+    tbb::parallel_for(tbb::blocked_range<int>(0, domain.particleSet().size(), 1), [&](tbb::blocked_range<int> range) {
+        for (int i = range.begin(); i < range.end(); ++i) {
+            auto &p = domain.particleSet()[i];
+
+            // Brownian motion style diffusion
+            // Generate a random unit vector, uniformly distributed on a sphere's surface
+            // Method taken from http://corysimon.github.io/articles/uniformdistn-on-sphere/
+            double theta = 2 * M_PI * Random::get(0.0, 1.0);
+            double phi = acos(1 - 2 * Random::get(0.0, 1.0));
+            double x = sin(phi) * cos(theta);
+            double y = sin(phi) * sin(theta);
+            double z = cos(phi);
+
+            auto unit_vector = openvdb::Vec3d(x, y, z);
+            openvdb::Vec3d brownian_displacement = sqrt(2 * dt * k) * unit_vector;
+
+            p.setPosition(p.pos() + brownian_displacement);
+        }
+    });
+}
+
 double FluidSimulator::calculate_kernel_function(openvdb::Vec3d vec) {
     double val1 = calculate_trilinear_hat(vec[0]);
     double val2 = calculate_trilinear_hat(vec[1]);
