@@ -49,7 +49,7 @@ public:
     using PosType = openvdb::Vec3R;
     using ScalarType = typename PosType::value_type;
 
-    typedef std::vector<Particle>::iterator iterator;
+    using iterator =  std::vector<Particle>::iterator;
 
     // Advect particles and project those which end up inside solids on the closest point of the solid's surface
     void advectAndEnsureOutsideObstacles(openvdb::Vec3dGrid::Ptr vel_grid, openvdb::Vec3fGrid::Ptr cpt_grid,

@@ -32,9 +32,10 @@ public:
     MacGrid(openvdb::math::Transform::Ptr i2w_transform, float voxel_size);
     ~MacGrid();
 
-    typedef openvdb::Vec3dGrid::Accessor Accessor;
-    typedef openvdb::tools::GridSampler<openvdb::Vec3dGrid::Accessor, openvdb::tools::StaggeredBoxSampler> StaggeredSampler;
-    typedef openvdb::tools::GridSampler<openvdb::Vec3dGrid::Accessor, openvdb::tools::BoxSampler> Sampler;
+    using Accessor = openvdb::Vec3dGrid::Accessor;
+    using StaggeredSampler =
+        openvdb::tools::GridSampler<openvdb::Vec3dGrid::Accessor, openvdb::tools::StaggeredBoxSampler>;
+    using Sampler = openvdb::tools::GridSampler<openvdb::Vec3dGrid::Accessor, openvdb::tools::BoxSampler>;
 
     void updatePreviousVelocityBuffer();
     void updateDiffBuffers();

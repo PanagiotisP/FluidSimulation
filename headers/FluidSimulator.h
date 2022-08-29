@@ -38,7 +38,7 @@ private:
     void constrain_velocity(FluidDomain &domain);
     void constrain_velocity(FluidDomain &domain, SolidObject solidObject);
     void compute_face_fractions(FluidDomain &domain);
-    void compute_density(FluidDomain domain);
+    void compute_density(FluidDomain &domain);
     Eigen::VectorXd compute_pressure_divirgence_constraint(FluidDomain &domain,
                                                            openvdb::Int32Grid::Accessor &fluid_indices_accessor,
                                                            int system_size, float dt);

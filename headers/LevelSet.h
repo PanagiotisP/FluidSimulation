@@ -11,14 +11,14 @@
 #include <openvdb/openvdb.h>
 #include <openvdb/tools/Interpolation.h>
 
-typedef std::function<float(float, float)> DistanceFunction;
+using DistanceFunction = std::function<float(float, float)>;
 
 class ParticleSet;
 
 class LevelSet {
 public:
-    typedef openvdb::tools::GridSampler< openvdb::FloatGrid::Accessor, openvdb::tools::BoxSampler > Sampler;
-    typedef openvdb::FloatGrid::Accessor Accessor;
+    using Sampler = openvdb::tools::GridSampler< openvdb::FloatGrid::Accessor, openvdb::tools::BoxSampler >;
+    using Accessor = openvdb::FloatGrid::Accessor;
 
     ~LevelSet();
     LevelSet(openvdb::FloatGrid::Ptr level_set);

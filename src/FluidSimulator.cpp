@@ -124,9 +124,6 @@ void FluidSimulator::transfer_from_grid_to_particles(FluidDomain &domain, float 
         MacGrid::StaggeredSampler vel_sampler(grid.velFront()->getAccessor(), grid.velFront()->transform());
         MacGrid::StaggeredSampler vel_diff_sampler(grid.velDiff()->getAccessor(), grid.velDiff()->transform());
 
-        MacGrid::Sampler displacement_sampler(grid.displacementGrid()->getAccessor(),
-                                              grid.displacementGrid()->transform());
-
         for (int i = range.begin(); i < range.end(); ++i) {
             auto &p = domain.particleSet()[i];
             openvdb::Vec3d pic_vel = vel_sampler.isSample(p.pos());
@@ -280,10 +277,6 @@ void FluidSimulator::index_fluid_cells(FluidDomain &domain, openvdb::Int32Grid::
     auto u_weights_accessor = grid.uWeights()->getAccessor();
     auto v_weights_accessor = grid.vWeights()->getAccessor();
     auto w_weights_accessor = grid.wWeights()->getAccessor();
-
-    auto u_fluid_weights_accessor = grid.uFluidWeights()->getAccessor();
-    auto v_fluid_weights_accessor = grid.vFluidWeights()->getAccessor();
-    auto w_fluid_weights_accessor = grid.wFluidWeights()->getAccessor();
 
     auto border_mask = openvdb::tools::createPointMask(domain.particleSet(), *domain._i2w_transform);
     openvdb::tools::dilateActiveValues(border_mask->tree(), 1, openvdb::tools::NN_FACE_EDGE_VERTEX,
@@ -629,13 +622,14 @@ void FluidSimulator::compute_face_fractions(FluidDomain &domain) {
     auto weights_duration = duration_cast<milliseconds>(t_end - t_start);
 }
 
-void FluidSimulator::compute_density(FluidDomain domain) {
+void FluidSimulator::compute_density(FluidDomain &domain) {
     auto &grid = domain.grid();
-    auto border_mask = openvdb::tools::createPointMask(domain.particleSet(), *domain._i2w_transform);
-    openvdb::tools::dilateActiveValues(border_mask->tree(), 1, openvdb::tools::NN_FACE_EDGE_VERTEX,
+    // Create a point mask to pre-allocate density grid, in order to perform parallel writes.
+    openvdb::MaskGrid::Ptr pointMask = openvdb::tools::createPointMask(domain.particleSet(), *domain._i2w_transform);
+    openvdb::tools::dilateActiveValues(pointMask->tree(), 2, openvdb::tools::NN_FACE_EDGE_VERTEX,
                                        openvdb::tools::TilePolicy::EXPAND_TILES);
 
-    openvdb::tree::IteratorRange<openvdb::MaskGrid::ValueOnCIter> fluidRange(border_mask->cbeginValueOn());
+    openvdb::tree::IteratorRange<openvdb::MaskGrid::ValueOnCIter> fluidRange(pointMask->cbeginValueOn());
 
     // Compute actual density of each cell
     // Zero out radius for the atlas creation as we care only for the particles whose center lies inside a voxel
@@ -643,12 +637,6 @@ void FluidSimulator::compute_density(FluidDomain domain) {
 
     auto p_atlas = openvdb::tools::ParticleAtlas<openvdb::tools::PointIndexGrid>::create<ParticleSet>(
         domain.particleSet(), domain.voxelSize());
-
-    // Create a point mask to pre-allocate density grid, in order to perform parallel writes.
-    auto pointMask = openvdb::tools::createPointMask(domain.particleSet(), grid.velBack()->transform());
-    // Dilate the point mask to cover the particles' contribution, as determined by the kernel function
-    openvdb::tools::dilateActiveValues(pointMask->tree(), 2, openvdb::tools::NN_FACE_EDGE_VERTEX,
-                                       openvdb::tools::TilePolicy::EXPAND_TILES);
 
     grid.densityGrid()->tree().topologyUnion(pointMask->tree());
     grid.densityGrid()->tree().voxelizeActiveTiles();
@@ -868,11 +856,7 @@ Eigen::VectorXd FluidSimulator::compute_pressure_density_constraint(
     auto u_weights_accessor = grid.uWeights()->getAccessor();
     auto v_weights_accessor = grid.vWeights()->getAccessor();
     auto w_weights_accessor = grid.wWeights()->getAccessor();
-    auto vel_front_accessor = grid.velFront()->getAccessor();
     auto density_grid_accessor = grid.densityGrid()->getAccessor();
-    auto u_fluid_weights_accessor = grid.uFluidWeights()->getAccessor();
-    auto v_fluid_weights_accessor = grid.vFluidWeights()->getAccessor();
-    auto w_fluid_weights_accessor = grid.wFluidWeights()->getAccessor();
 
     auto fluidAccessor = domain.fluidLevelSet().getAccessor();
     auto solidAccessor = domain.solidLevelSet().getAccessor();
@@ -1185,19 +1169,6 @@ void FluidSimulator::project_density_constraint(FluidDomain &domain,
         dx /= domain.voxelSize();
         displacement_grid_accessor.setValue(coord, dx);
     }
-#ifdef PRINT
-    std::cout << std::endl;
-    for (int i = 0; i < 8; ++i) {
-        std::cout << i << std::endl;
-        for (int j = 7; j >= 0; --j) {
-            std::cout << std::endl;
-            for (int k = 0; k < 8; ++k) {
-                std::cout << displacement_grid_accessor.getValue(openvdb::Coord(i, j, k)) << " ";
-            }
-        }
-    }
-    std::cout << std::endl;
-#endif
     // for (auto solidObj : domain.solidObjs()) {
     //     auto new_solid_vel_vector = solidObj->combinedVelocityVector()
     //                                 + dt * solidObj->massMatrixInverse() * solidObj->jMatrix() * pressure_grid;
