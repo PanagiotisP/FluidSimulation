@@ -28,3 +28,6 @@ https://user-images.githubusercontent.com/32745362/195076931-31b83383-8198-4468-
 
 https://user-images.githubusercontent.com/32745362/195076983-ce7dfc69-d9ae-4bc5-8657-08c11952df4f.mov
 
+## Required packages for development
+* [SFML-2.5.1](https://www.sfml-dev.org/): Used for visualisation live of the fluid domain, as the simulation executes
+* [openvdb-9.0.0](https://github.com/AcademySoftwareFoundation/openvdb): Used as the underlying data structure for grids and level sets. Offers a rich set of tools for geometry manipulation.
